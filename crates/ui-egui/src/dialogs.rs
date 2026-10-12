@@ -126,7 +126,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         "table" => {
             field(ui, d, "Number of columns:", "cols", "5");
             field(ui, d, "Number of rows:", "rows", "2");
-            let (ok, cancel) = buttons(ui, "Insert");
+            let (ok, cancel) = buttons(ui, crate::familai_it::tr("Insert"));
             if ok {
                 let (r, c) = (num(d, "rows", 2.0) as usize, num(d, "cols", 5.0) as usize);
                 run(app, "insert.table", json!({"rows": r, "cols": c}));
@@ -168,9 +168,9 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             let mut apply_all = false;
             let mut apply = false;
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                apply_all = ui.button("Apply to All").clicked();
+                apply_all = ui.button(crate::familai_it::tr("Apply to All")).clicked();
                 apply = ui.button("Apply").clicked();
-                if ui.button("Cancel").clicked() {
+                if ui.button(crate::familai_it::tr("Cancel")).clicked() {
                     d.fields.insert("cancel".into(), "1".into());
                 }
             });
@@ -331,7 +331,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             let mut v = d.get("text", "");
             ui.add(egui::TextEdit::multiline(&mut v).desired_rows(10).desired_width(380.0).code_editor());
             d.fields.insert("text".into(), v.clone());
-            let (ok, cancel) = buttons(ui, "Insert");
+            let (ok, cancel) = buttons(ui, crate::familai_it::tr("Insert"));
             if ok {
                 run(app, "slide.fromOutline", json!({"text": v}));
             }
@@ -340,7 +340,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         "renameSection" | "renameShape" | "renameLayout" => {
             let cur = d.params.get("name").and_then(Value::as_str).unwrap_or("").to_string();
             field(ui, d, "Name:", "name", &cur);
-            let (ok, cancel) = buttons(ui, "Rename");
+            let (ok, cancel) = buttons(ui, crate::familai_it::tr("Rename"));
             if ok {
                 let name = d.get("name", "");
                 match d.id.as_str() {
@@ -428,7 +428,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 };
                 json!({"layout": layout, "perPage": per, "includeHidden": d.get("pdfHidden", "false") == "true"})
             };
-            let (ok, cancel) = buttons(ui, "Export");
+            let (ok, cancel) = buttons(ui, crate::familai_it::tr("Export"));
             if ok {
                 let name = app.session.active().map(|s| s.title()).unwrap_or_else(|| "Presentation".into());
                 let (ext, all) = match fmt.as_str() {
@@ -495,7 +495,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     }
                 });
             }
-            let (ok, cancel) = buttons(ui, "Close");
+            let (ok, cancel) = buttons(ui, crate::familai_it::tr("Close"));
             ok || cancel
         }
         "equation" => {
@@ -503,7 +503,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             let mut v = d.get("eq", "");
             ui.add(egui::TextEdit::singleline(&mut v).desired_width(340.0).font(theme::font(15.0)));
             d.fields.insert("eq".into(), v.clone());
-            let (ok, cancel) = buttons(ui, "Insert");
+            let (ok, cancel) = buttons(ui, crate::familai_it::tr("Insert"));
             if ok && !v.is_empty() {
                 let pretty = pretty_equation(&v);
                 let size = app.session.active().map(|s| s.doc.slide_size).unwrap_or(deckcraft_model::defaults::WIDE);
@@ -530,7 +530,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     }
                 });
             }
-            let (ok, cancel) = buttons(ui, "Close");
+            let (ok, cancel) = buttons(ui, crate::familai_it::tr("Close"));
             ok || cancel
         }
         "accessibility" => {
@@ -557,7 +557,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     });
                 }
             });
-            let (ok, cancel) = buttons(ui, "Close");
+            let (ok, cancel) = buttons(ui, crate::familai_it::tr("Close"));
             ok || cancel
         }
         "language" => {
@@ -584,7 +584,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             for s in &shows {
                 ui.horizontal(|ui| {
                     ui.label(format!("{} ({} slides)", s.name, s.slides.len()));
-                    if ui.small_button("Delete").clicked() {
+                    if ui.small_button(crate::familai_it::tr("Delete")).clicked() {
                         let _ = app.run("show.customShow", json!({"name": s.name, "delete": true}));
                     }
                 });
@@ -607,7 +607,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             });
             let Some((c, id)) = ch else {
                 ui.label("Select a chart first.");
-                let (ok, cancel) = buttons(ui, "Close");
+                let (ok, cancel) = buttons(ui, crate::familai_it::tr("Close"));
                 return ok || cancel;
             };
             ui.label("Edit the data: first row = series names, first column = categories.");
@@ -686,7 +686,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             let mut v = d.get("text", "Plan\nBuild\nLaunch");
             ui.add(egui::TextEdit::multiline(&mut v).desired_rows(5).desired_width(320.0));
             d.fields.insert("text".into(), v.clone());
-            let (ok, cancel) = buttons(ui, "Insert");
+            let (ok, cancel) = buttons(ui, crate::familai_it::tr("Insert"));
             if ok {
                 run(app, "insert.smartArt", json!({"kind": kind, "items": v.lines().filter(|l| !l.trim().is_empty()).collect::<Vec<_>>()}));
             }
@@ -711,7 +711,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 }
                 _ => about(app, ui),
             }
-            let (ok, _) = buttons(ui, "Close");
+            let (ok, _) = buttons(ui, crate::familai_it::tr("Close"));
             ok
         }
         "preferences" => {
@@ -880,7 +880,7 @@ pub fn start_screen(app: &mut SlideApp, ui: &mut Ui) {
         ui.add_space(16.0);
         ui.horizontal(|ui| {
             ui.add_space(40.0);
-            if ui.button("Open…").clicked() {
+            if ui.button(crate::familai_it::tr("Open…")).clicked() {
                 let _ = app.run("app.openDialog", json!({}));
             }
             if ui.button("Open the sample deck").clicked()

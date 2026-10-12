@@ -208,20 +208,20 @@ pub fn slide_menu(app: &mut SlideApp, ui: &mut Ui, i: usize) {
         }
     }
     ui.separator();
-    if ui.button("New Slide").clicked() {
+    if ui.button(crate::familai_it::tr("New Slide")).clicked() {
         let _ = app.run("slide.new", json!({}));
         ui.close();
     }
-    if ui.button("Duplicate Slide").clicked() {
+    if ui.button(crate::familai_it::tr("Duplicate Slide")).clicked() {
         let _ = app.run("slide.duplicate", json!({}));
         ui.close();
     }
-    if ui.button("Delete Slide").clicked() {
+    if ui.button(crate::familai_it::tr("Delete Slide")).clicked() {
         let _ = app.run("slide.delete", json!({}));
         ui.close();
     }
     ui.separator();
-    if ui.button("Add Section").clicked() {
+    if ui.button(crate::familai_it::tr("Add Section")).clicked() {
         let _ = app.run("section.add", json!({"at": i}));
         ui.close();
     }
@@ -238,11 +238,11 @@ pub fn slide_menu(app: &mut SlideApp, ui: &mut Ui, i: usize) {
             }
         }
     });
-    if ui.button("Reset Slide").clicked() {
+    if ui.button(crate::familai_it::tr("Reset Slide")).clicked() {
         let _ = app.run("slide.reset", json!({}));
         ui.close();
     }
-    if ui.button("Format Background…").clicked() {
+    if ui.button(crate::familai_it::tr("Format Background…")).clicked() {
         let _ = app.run("view.pane", json!({"pane": "background"}));
         ui.close();
     }

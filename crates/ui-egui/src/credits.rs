@@ -238,7 +238,7 @@ pub fn contributors_ui(ui: &mut egui::Ui) {
         if ui.selectable_label(!v.table, "Grab bag").clicked() {
             v.table = false;
         }
-        if ui.selectable_label(v.table, "Table").clicked() {
+        if ui.selectable_label(v.table, crate::familai_it::tr("Table")).clicked() {
             v.table = true;
         }
     });

@@ -150,7 +150,7 @@ fn format_shape(app: &mut SlideApp, ui: &mut Ui) {
             if ui.add(egui::Slider::new(&mut s, 0.0..=50.0).text("size (pt)")).drag_stopped() {
                 run(app, "shape.effects", json!({"softEdges": s}));
             }
-            if ui.button("Reset Effects").clicked() {
+            if ui.button(crate::familai_it::tr("Reset Effects")).clicked() {
                 run(app, "shape.effects", json!({"reset": true}));
             }
         }
@@ -184,7 +184,7 @@ fn format_shape(app: &mut SlideApp, ui: &mut Ui) {
         "text" => {
             ui.label(egui::RichText::new("Text Box").font(theme::bold(13.0)));
             ui.horizontal(|ui| {
-                ui.label("Vertical alignment");
+                ui.label(crate::familai_it::tr("Vertical alignment"));
                 for (l, a) in [("Top", "top"), ("Middle", "middle"), ("Bottom", "bottom")] {
                     if ui.small_button(l).clicked() {
                         run(app, "format.anchor", json!({"anchor": a}));
@@ -200,10 +200,10 @@ fn format_shape(app: &mut SlideApp, ui: &mut Ui) {
             });
             let wrap = sh.text.as_ref().and_then(|t| t.body.wrap).unwrap_or(true);
             let mut w = wrap;
-            if ui.checkbox(&mut w, "Wrap text in shape").changed() {
+            if ui.checkbox(&mut w, crate::familai_it::tr("Wrap text in shape")).changed() {
                 run(app, "format.wrap", json!({"on": w}));
             }
-            ui.label("Margins (pt)");
+            ui.label(crate::familai_it::tr("Margins (pt)"));
             let b = sh.text.as_ref().map(|t| t.body.clone()).unwrap_or_default();
             for (l, k, v) in [
                 ("Left", "left", b.inset_l.unwrap_or(7.2)),
@@ -219,7 +219,7 @@ fn format_shape(app: &mut SlideApp, ui: &mut Ui) {
                 });
             }
             ui.horizontal(|ui| {
-                ui.label("Columns");
+                ui.label(crate::familai_it::tr("Columns"));
                 for n in 1..=3 {
                     if ui.small_button(n.to_string()).clicked() {
                         run(app, "format.columns", json!({"count": n, "spacing": 18}));
@@ -246,7 +246,7 @@ fn format_shape(app: &mut SlideApp, ui: &mut Ui) {
             if ui.add(egui::Slider::new(&mut tr, 0.0..=1.0).text("Transparency")).drag_stopped() {
                 run(app, "picture.adjust", json!({"transparency": tr}));
             }
-            if ui.button("Reset Picture").clicked() {
+            if ui.button(crate::familai_it::tr("Reset Picture")).clicked() {
                 run(app, "picture.reset", json!({}));
             }
         }
@@ -284,7 +284,7 @@ fn format_shape(app: &mut SlideApp, ui: &mut Ui) {
                 None => ("shape.fill".into(), json!({"none": true})),
             });
             ui.horizontal(|ui| {
-                ui.label("Transparency");
+                ui.label(crate::familai_it::tr("Transparency"));
                 let id = ui.id().with("ftr");
                 let mut v: f32 = ui.data_mut(|d| d.get_temp(id).unwrap_or(0.0));
                 let r = ui.add(egui::Slider::new(&mut v, 0.0..=100.0).suffix("%"));
@@ -299,7 +299,7 @@ fn format_shape(app: &mut SlideApp, ui: &mut Ui) {
                     run(app, "shape.fill", json!({"gradient": crate::fillui::gradient_json(&ng)}));
                 }
                 let mut rot = g.rotate_with_shape;
-                if ui.checkbox(&mut rot, "Rotate with shape").changed() {
+                if ui.checkbox(&mut rot, crate::familai_it::tr("Rotate with shape")).changed() {
                     let ng = deckcraft_model::style::Gradient { rotate_with_shape: rot, ..g.clone() };
                     run(app, "shape.fill", json!({"gradient": crate::fillui::gradient_json(&ng)}));
                 }
@@ -321,14 +321,14 @@ fn format_shape(app: &mut SlideApp, ui: &mut Ui) {
                 None => ("shape.line".into(), json!({"none": true})),
             });
             ui.horizontal(|ui| {
-                ui.label("Width");
+                ui.label(crate::familai_it::tr("Width"));
                 let w = sh.line.as_ref().and_then(|l| l.width).unwrap_or(0.75);
                 if let Some(v) = widgets::spinner(ui, "lw", w, 0.25, " pt", 60.0) {
                     run(app, "shape.line", json!({"width": v.max(0.0)}));
                 }
             });
             ui.horizontal_wrapped(|ui| {
-                ui.label("Dash");
+                ui.label(crate::familai_it::tr("Dash"));
                 for (l, d) in [("—", "solid"), ("···", "sysDot"), ("- -", "dash"), ("-·-", "dashDot"), ("— —", "lgDash")] {
                     if ui.small_button(l).clicked() {
                         run(app, "shape.line", json!({"dash": d}));
@@ -389,7 +389,7 @@ fn background(app: &mut SlideApp, ui: &mut Ui) {
         Some(Fill::Solid { color }) => {
             current = Some(json!({"color": cref_param(color)}));
             ui.horizontal(|ui| {
-                ui.label("Color");
+                ui.label(crate::familai_it::tr("Color"));
                 let r = widgets::drop_button(ui, "Color", vec2(70.0, 20.0), true);
                 widgets::color_popup(&r).show(|ui| {
                     if let Some(Some(c)) = widgets::color_grid(ui, &sc, None) {
@@ -427,7 +427,7 @@ fn background(app: &mut SlideApp, ui: &mut Ui) {
             }
         }
         Some(Fill::Picture(_)) => {
-            if ui.button("Insert picture from file…").clicked()
+            if ui.button(crate::familai_it::tr("Insert picture from file…")).clicked()
                 && let Some(pick) = app.services.pick_open.as_mut()
                 && let Some(path) = pick("picture")
                 && let Some(Ok(bytes)) = app.services.read.as_ref().map(|r| r(&path))
@@ -440,7 +440,7 @@ fn background(app: &mut SlideApp, ui: &mut Ui) {
     ui.add_space(4.0);
     let hide = app.session.active().and_then(|d| d.current_slide().map(|s| !s.show_master_shapes)).unwrap_or(false);
     let mut h = hide;
-    if ui.checkbox(&mut h, "Hide background graphics").changed() {
+    if ui.checkbox(&mut h, crate::familai_it::tr("Hide background graphics")).changed() {
         run(app, "design.hideBackgroundGraphics", json!({"hide": h}));
     }
     ui.add_space(8.0);
@@ -451,7 +451,7 @@ fn background(app: &mut SlideApp, ui: &mut Ui) {
             o.insert("all".into(), json!(true));
             run(app, "design.background", Value::Object(o));
         }
-        if ui.button("Reset Background").clicked() {
+        if ui.button(crate::familai_it::tr("Reset Background")).clicked() {
             run(app, "design.background", json!({"reset": true}));
         }
     });
@@ -531,15 +531,15 @@ fn animation(app: &mut SlideApp, ui: &mut Ui) {
                 }
             }
             ui.separator();
-            if ui.button("Move Up").clicked() {
+            if ui.button(crate::familai_it::tr("Move Up")).clicked() {
                 run(app, "animation.move", json!({"index": i, "to": i.saturating_sub(1)}));
                 ui.close();
             }
-            if ui.button("Move Down").clicked() {
+            if ui.button(crate::familai_it::tr("Move Down")).clicked() {
                 run(app, "animation.move", json!({"index": i, "to": i + 1}));
                 ui.close();
             }
-            if ui.button("Remove").clicked() {
+            if ui.button(crate::familai_it::tr("Remove")).clicked() {
                 run(app, "animation.remove", json!({"index": i}));
                 ui.close();
             }
@@ -556,11 +556,11 @@ fn selection(app: &mut SlideApp, ui: &mut Ui) {
         st.shapes().iter().rev().map(|s| (s.id.0, s.name.clone(), s.hidden, s.kind_name())).collect();
     let selected: Vec<u32> = st.selection.shapes.iter().map(|i| i.0).collect();
     ui.horizontal(|ui| {
-        if ui.button("Show All").clicked() {
+        if ui.button(crate::familai_it::tr("Show All")).clicked() {
             let ids: Vec<u32> = shapes.iter().map(|s| s.0).collect();
             run(app, "shape.visible", json!({"ids": ids, "visible": true}));
         }
-        if ui.button("Hide All").clicked() {
+        if ui.button(crate::familai_it::tr("Hide All")).clicked() {
             let ids: Vec<u32> = shapes.iter().map(|s| s.0).collect();
             run(app, "shape.visible", json!({"ids": ids, "visible": false}));
         }
@@ -596,15 +596,15 @@ fn selection(app: &mut SlideApp, ui: &mut Ui) {
             app.dialog = Some(d);
         }
         resp.context_menu(|ui| {
-            if ui.button("Bring Forward").clicked() {
+            if ui.button(crate::familai_it::tr("Bring Forward")).clicked() {
                 run(app, "arrange.bringForward", json!({"ids": [id]}));
                 ui.close();
             }
-            if ui.button("Send Backward").clicked() {
+            if ui.button(crate::familai_it::tr("Send Backward")).clicked() {
                 run(app, "arrange.sendBackward", json!({"ids": [id]}));
                 ui.close();
             }
-            if ui.button("Rename…").clicked() {
+            if ui.button(crate::familai_it::tr("Rename…")).clicked() {
                 let mut d = crate::dialogs::Dialog::new("renameShape");
                 d.params = json!({"id": id, "name": name});
                 app.dialog = Some(d);
@@ -645,7 +645,7 @@ fn comments(app: &mut SlideApp, ui: &mut Ui) {
             ui.horizontal(|ui| {
                 let id = ui.id().with(("reply", i));
                 let mut txt: String = ui.data_mut(|d| d.get_temp(id).unwrap_or_default());
-                let r = ui.add(egui::TextEdit::singleline(&mut txt).hint_text("Reply…").desired_width(ui.available_width() - 70.0));
+                let r = ui.add(egui::TextEdit::singleline(&mut txt).hint_text(crate::familai_it::tr("Reply…")).desired_width(ui.available_width() - 70.0));
                 if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !txt.trim().is_empty() {
                     run(app, "comment.reply", json!({"index": i, "text": txt}));
                     txt.clear();

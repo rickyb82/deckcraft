@@ -141,7 +141,7 @@ pub fn notes_pane(app: &mut SlideApp, ui: &mut Ui) {
             let r = ui.add(
                 egui::TextEdit::multiline(&mut buf)
                     .id(id)
-                    .hint_text("Click to add notes")
+                    .hint_text(crate::familai_it::tr("Click to add notes"))
                     .frame(egui::Frame::NONE)
                     .desired_width(f32::INFINITY)
                     .desired_rows(2)
