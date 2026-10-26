@@ -108,7 +108,7 @@ impl Headless {
         );
         let png = img.to_png();
         if let Some(path) = s(p, "path") {
-            std::fs::write(path, &png).map_err(|e| format!("{path}: {e}"))?;
+            deckcraft_engine::file_access::write_file(path, &png).map_err(|e| e.to_string())?;
             return Ok(json!({"path": path, "width": img.width, "height": img.height}));
         }
         Ok(json!({"png": deckcraft_engine::cmd::base64_encode(&png), "width": img.width, "height": img.height, "slide": i}))

@@ -543,3 +543,72 @@ fn inserted_hyperlinks_look_like_links() {
     s.execute("format.underline", &json!({})).unwrap();
     assert_eq!(s.execute("format.state", &json!({})).unwrap()["underline"], false);
 }
+
+/// `deckcraft-cli mcp --automation-read-root … --automation-write-root …`: every command that
+/// reads or writes a path is held to the roots, whatever form the path takes (`..`, absolute,
+/// a link out of the root), and a refused command leaves nothing on disk.
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn commands_that_take_a_path_are_held_to_the_automation_roots() {
+    use crate::file_access::{AutomationRoots, confine, tests::link};
+    let base = std::env::temp_dir().join(format!("deckcraft-roots-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    for d in ["in", "out", "outside"] {
+        std::fs::create_dir_all(base.join(d)).unwrap();
+    }
+    let deck = deckcraft_format::save(&session().doc().unwrap().doc).unwrap();
+    std::fs::write(base.join("in/deck.deckcraft"), &deck).unwrap();
+    std::fs::write(base.join("outside/secret.txt"), "top secret").unwrap();
+    std::fs::write(base.join("outside/x.png"), [0x89, b'P', b'N', b'G']).unwrap();
+    let roots = AutomationRoots::new(Some(&base.join("in")), Some(&base.join("out"))).unwrap();
+    let p = |rel: &str| base.join(rel).to_string_lossy().into_owned();
+    let sep = std::path::MAIN_SEPARATOR;
+    confine(Some(&roots), || {
+        let mut s = session();
+        // Reads: inside the read root only.
+        s.execute("file.open", &json!({"path": p("in/deck.deckcraft")})).unwrap();
+        let up = format!("{}{sep}..{sep}outside{sep}secret.txt", p("in"));
+        for path in [p("outside/secret.txt"), up, "/etc/hostname.txt".to_string(), p("out/deck.deckcraft")] {
+            let e = s.execute("file.open", &json!({"path": path})).unwrap_err().to_string();
+            assert!(e.contains("automation path rejected"), "{path}: {e}");
+        }
+        for cmd in ["insert.picture", "insert.video", "insert.audio"] {
+            let e = s.execute(cmd, &json!({"path": p("outside/x.png")})).unwrap_err().to_string();
+            assert!(e.contains("outside the read root"), "{cmd}: {e}");
+        }
+        // Writes: inside the write root only; refused ones create nothing.
+        s.execute("file.save", &json!({"path": p("out/deck.pptx")})).unwrap();
+        assert!(base.join("out/deck.pptx").is_file());
+        for (cmd, path) in [
+            ("file.save", p("outside/deck.pptx")),
+            ("file.saveAs", format!("{}{sep}..{sep}outside{sep}deck.deckcraft", p("out"))),
+            ("file.saveTemplate", p("in/t.potx")),
+            ("file.export", p("outside/slide.png")),
+            ("file.export", p("outside/deck.pdf")),
+            ("file.export", "/tmp/../tmp/deckcraft-escape.pptx".to_string()),
+        ] {
+            let e = s.execute(cmd, &json!({"path": path})).unwrap_err().to_string();
+            assert!(e.contains("automation path rejected"), "{cmd} {path}: {e}");
+        }
+        let e = s.execute("file.export", &json!({"path": p("outside/s.png"), "all": true})).unwrap_err().to_string();
+        assert!(e.contains("outside the write root"), "{e}");
+        // The root itself names no file: its temporary sibling would land beside it.
+        assert!(s.execute("file.save", &json!({"path": p("out")})).is_err());
+        assert!(!base.join("out.saving").exists());
+        // A link inside the roots that leads out of them.
+        if link(&base.join("outside/secret.txt"), &base.join("in/leak.txt")) && link(&base.join("outside"), &base.join("out/away")) {
+            let e = s.execute("file.open", &json!({"path": p("in/leak.txt")})).unwrap_err().to_string();
+            assert!(e.contains("outside the read root"), "{e}");
+            let e = s.execute("file.save", &json!({"path": p("out/away/deck.pptx")})).unwrap_err().to_string();
+            assert!(e.contains("outside the write root"), "{e}");
+        }
+    });
+    let left: Vec<_> = std::fs::read_dir(base.join("outside")).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert_eq!(left.len(), 2, "nothing written outside the write root: {left:?}");
+    assert!(!base.join("in/t.potx").exists() && !std::path::Path::new("/tmp/deckcraft-escape.pptx").exists());
+    // Without roots in force (the desktop app, `deckcraft-cli run`) nothing is checked.
+    let mut s = session();
+    s.execute("file.open", &json!({"path": p("in/deck.deckcraft")})).unwrap();
+    s.execute("file.save", &json!({"path": p("outside/ok.deckcraft")})).unwrap();
+    let _ = std::fs::remove_dir_all(base);
+}

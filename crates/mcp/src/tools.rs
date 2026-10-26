@@ -101,14 +101,14 @@ pub fn tool_definitions() -> Vec<Value> {
         tool(
             "open_presentation",
             "Open presentation",
-            "Open a .deckcraft or .pptx file by path.",
+            "Open a .deckcraft or .pptx file by path. The headless server reads files only inside its read root (`--automation-read-root`).",
             obj(json!({"path": string("File path")}), &["path"]),
             false,
         ),
         tool(
             "save_presentation",
             "Save presentation",
-            "Save the active presentation (.deckcraft or .pptx by extension).",
+            "Save the active presentation (.deckcraft or .pptx by extension). The headless server writes files only inside its write root (`--automation-write-root`).",
             obj(json!({"path": string("File path (optional when it was opened from a file)")}), &[]),
             false,
         ),

@@ -288,7 +288,8 @@ fn clipboard_group(app: &mut SlideApp, ui: &mut Ui) {
             small(app, ui, Icon::Copy, "Copy", "edit.copy", json!({}));
             let on = app.session.painter.is_some();
             let en = enabled(app, "format.painter");
-            let r = small_button(ui, Icon::FormatPainter, "Format", en, on).on_hover_text(crate::familai_it::tr("Format Painter (double-click to keep it on)"));
+            let r = small_button(ui, Icon::FormatPainter, "Format", en, on)
+                .on_hover_text(crate::familai_it::tr("Format Painter (double-click to keep it on)"));
             if r.double_clicked() {
                 run(app, "format.painter", json!({"sticky": true}));
             } else if r.clicked() {

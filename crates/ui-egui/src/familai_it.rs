@@ -321,7 +321,9 @@ pub fn tr(s: &str) -> &str {
         "Pencil" => "Matita",
         "Perspective" => "Prospettiva",
         "Pick" => "Scegli",
-        "Pick a look for your slides. Ideas are generated on your device." => "Scegli un aspetto per le diapositive. Le idee sono generate sul tuo dispositivo.",
+        "Pick a look for your slides. Ideas are generated on your device." => {
+            "Scegli un aspetto per le diapositive. Le idee sono generate sul tuo dispositivo."
+        }
         "Picture" => "Immagine",
         "Picture\nStyles" => "Stili\nimmagine",
         "Picture Format" => "Formato immagine",
@@ -414,7 +416,9 @@ pub fn tr(s: &str) -> &str {
         "Select" => "Seleziona",
         "Select All" => "Seleziona tutto",
         "Select a shape to format it." => "Seleziona una forma per formattarla.",
-        "Select an object on the slide and add an animation from the Animations tab." => "Seleziona un oggetto nella diapositiva e aggiungi un'animazione dalla scheda Animazioni.",
+        "Select an object on the slide and add an animation from the Animations tab." => {
+            "Seleziona un oggetto nella diapositiva e aggiungi un'animazione dalla scheda Animazioni."
+        }
         "Selection" => "Selezione",
         "Selection\nPane" => "Riquadro\ndi selezione",
         "Selection Pane…" => "Riquadro di selezione…",

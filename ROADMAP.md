@@ -2,7 +2,7 @@
 
 **Stage: alpha** · next: beta, ~20 points and ~120–210 h away
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** minor (hours to ~95% per audience added; ready 56% → 55%; stage stays alpha; previous: major, full re-measure against PowerPoint for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft PowerPoint for Mac 16.113 (Microsoft 365)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-26 · **Change:** minor (MCP automation roots and dependency upgrades; previous: hours to ~95% per audience added; ready 56% → 55%; stage stays alpha; previous: major, full re-measure against PowerPoint for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft PowerPoint for Mac 16.113 (Microsoft 365)
 
 DeckCraft aims at full PowerPoint parity, and to be better: faster, open (a documented zip+JSON
 format plus PPTX), scriptable by agents (CLI, JSON control channel, MCP), and available everywhere
@@ -128,6 +128,7 @@ app's JSON control channel (`deckcraft --control PORT`).
 
 | Date | What landed |
 |---|---|
+| 2026-10-26 | Security: the headless MCP server reads and writes files only inside `--automation-read-root` / `--automation-write-root` (links followed, `..` and absolute paths outside refused; no file by path without them); the control channel serves at most 16 connections and no longer panics when a thread can't be made; quick-xml 0.41 (RUSTSEC-2026-0194/0195), zip 9 (RUSTSEC-2026-0367/0368/0369), tokio 1.54.1 |
 | 2026-10-26 | Control channel hardened: every request needs the window's key (`<settings>/control-key.local-<port>`, 0600, constant-time compare), a non-JSON line closes the connection, 1 MiB line cap, 30 s first-request deadline; `deckcraft-cli mcp --connect` and `deckcraft-cli app` read the key |
 | 2026-10-10 | Progress docs restructured to the craftrules standard; full re-measure (breadth 79%, ready ~55%, mainstream ~53%, essentials ~62%, alpha). Landed: Animation Painter (#54), Morph geometry outlines (#27), animated GIF playback (#39), hyperlink colour and following links in the show (#37, #45), date fields in their own format (#36), flipped shapes keep readable text (#35), show transition fix (#46), start screen from the Home button (#49), MCP export lists PDF (#65), OmaStore manifest (#57) |
 | 2026-10-09 | v0.4.0 released. UAX #9 bidi and Arabic shaping (#4), Morph with Words and Characters (#5), tables grow to fit and PDF cell text (#14), rotating log file (#7), DX12 default on Windows (#16), H.264/HEVC overflow hardening (#2), PPTX sniffing anywhere in the zip (#19) |
@@ -140,6 +141,7 @@ app's JSON control channel (`deckcraft --control PORT`).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-26 | minor | Progress log: MCP automation roots, control-channel connection cap, dependency upgrades |
 | 2026-10-10 | minor | Readiness-by-audience table with hours to ~95% for full, mainstream and essentials |
 | 2026-10-10 | minor | Added mainstream practitioner (~53%) and essentials user (~62%); features recomputed from written area weights, ready ~56% → ~55% |
 | 2026-10-10 | minor | Stage checked against the new core-workflow gate: passes, stays alpha |

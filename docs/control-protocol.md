@@ -37,6 +37,9 @@ cat ~/.config/deckcraft/control-key.local-7990   # Linux, port 7990
 - A connection that sends no authorised request within 30 s of being accepted is closed. That is
   one limit: blank lines and bad JSON do not extend it. After an authorised request the
   connection may stay idle.
+- At most 16 connections are served at once; a further one gets
+  `{"ok": false, "error": "too many connections"}` and is closed. Close connections you no longer
+  need.
 
 `deckcraft-cli mcp --connect` and `deckcraft-cli app` take the key from `DECKCRAFT_CONTROL_KEY`,
 or else from the key file for the port they connect to, and read it again on every new connection

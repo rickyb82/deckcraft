@@ -4,6 +4,7 @@ use deckcraft_model::{Presentation, defaults};
 use serde_json::{Value, json};
 
 use super::*;
+use crate::file_access::write_file;
 use crate::{DocState, EngineError, Result, Session};
 
 pub fn specs() -> Vec<CommandSpec> {
@@ -85,7 +86,7 @@ pub fn add_opened(s: &mut Session, name: &str, path: Option<String>, p: Presenta
 #[cfg(not(target_arch = "wasm32"))]
 fn open(s: &mut Session, p: &Value) -> Result<Value> {
     let path = str_param(p, "path").ok_or_else(|| bad("file.open", "missing `path`"))?;
-    let bytes = std::fs::read(path).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
+    let bytes = crate::file_access::read_file(path)?;
     let doc = open_presentation(path, &bytes)?;
     let native = deckcraft_format::sniff(&bytes) || deckcraft_pptx::sniff(&bytes);
     let i = add_opened(s, path, native.then(|| path.to_string()), doc);
@@ -165,18 +166,6 @@ fn mark_saved(s: &mut Session, path: Option<String>) -> Result<()> {
         crate::recovery::discard(dir, uid);
     }
     Ok(())
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn write_file(path: &str, bytes: &[u8]) -> Result<()> {
-    // Write to a temporary sibling then rename, so a failed save never truncates the old file.
-    let tmp = format!("{path}.saving");
-    std::fs::write(&tmp, bytes).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
-    std::fs::rename(&tmp, path).map_err(|e| EngineError::Other(format!("{path}: {e}")))
-}
-#[cfg(target_arch = "wasm32")]
-fn write_file(_path: &str, _bytes: &[u8]) -> Result<()> {
-    Err(EngineError::Other("saving to a path is not available in the browser".into()))
 }
 
 fn save(s: &mut Session, p: &Value) -> Result<Value> {

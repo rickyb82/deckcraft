@@ -645,7 +645,8 @@ fn comments(app: &mut SlideApp, ui: &mut Ui) {
             ui.horizontal(|ui| {
                 let id = ui.id().with(("reply", i));
                 let mut txt: String = ui.data_mut(|d| d.get_temp(id).unwrap_or_default());
-                let r = ui.add(egui::TextEdit::singleline(&mut txt).hint_text(crate::familai_it::tr("Reply…")).desired_width(ui.available_width() - 70.0));
+                let r = ui
+                    .add(egui::TextEdit::singleline(&mut txt).hint_text(crate::familai_it::tr("Reply…")).desired_width(ui.available_width() - 70.0));
                 if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !txt.trim().is_empty() {
                     run(app, "comment.reply", json!({"index": i, "text": txt}));
                     txt.clear();

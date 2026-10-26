@@ -8,7 +8,8 @@
 //! deckcraft-cli commands [FILTER]               # list commands (JSON)
 //! deckcraft-cli describe ID                     # one command
 //! deckcraft-cli app [--port PORT] COMMAND [JSON] | --method METHOD [JSON]   # drive the running app
-//! deckcraft-cli mcp [--connect PORT] [--sample] # MCP server over stdio
+//! deckcraft-cli mcp [--connect PORT] [--sample] [--automation-read-root DIR] [--automation-write-root DIR]
+//!                                               # MCP server over stdio (files only inside the roots)
 //! deckcraft-cli links | --version
 //! ```
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
@@ -39,7 +40,7 @@ const USAGE: &str = "usage: deckcraft-cli info FILE
        deckcraft-cli commands [FILTER]
        deckcraft-cli describe COMMAND
        deckcraft-cli app [--port PORT] COMMAND [JSON] | --method METHOD [JSON]
-       deckcraft-cli mcp [--connect PORT] [--sample]
+       deckcraft-cli mcp [--connect PORT] [--sample] [--automation-read-root DIR] [--automation-write-root DIR]
        deckcraft-cli links | --version";
 
 fn main() -> ExitCode {
@@ -252,12 +253,56 @@ fn app(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// The `--automation-read-root` / `--automation-write-root` folders (`--flag DIR` or
+/// `--flag=DIR`, each at most once).
+#[derive(Debug, Default)]
+struct RootArgs {
+    read: Option<std::path::PathBuf>,
+    write: Option<std::path::PathBuf>,
+}
+
+impl RootArgs {
+    /// Take `arg` (and its value from `rest`) when it is one of the two flags.
+    fn take(&mut self, arg: &str, rest: &mut std::slice::Iter<'_, String>) -> Result<bool, String> {
+        let (flag, inline) = match arg.split_once('=') {
+            Some((f, v)) => (f, Some(v.to_string())),
+            None => (arg, None),
+        };
+        let slot = match flag {
+            "--automation-read-root" => &mut self.read,
+            "--automation-write-root" => &mut self.write,
+            _ => return Ok(false),
+        };
+        let value = match inline {
+            Some(v) => v,
+            None => rest.next().cloned().ok_or_else(|| format!("{flag} needs a folder"))?,
+        };
+        if slot.replace(value.into()).is_some() {
+            return Err(format!("{flag} given more than once"));
+        }
+        Ok(true)
+    }
+
+    fn given(&self) -> bool {
+        self.read.is_some() || self.write.is_some()
+    }
+
+    /// The roots (neither: no file by path).
+    fn roots(&self) -> Result<std::sync::Arc<deckcraft_engine::file_access::AutomationRoots>, String> {
+        deckcraft_engine::file_access::AutomationRoots::new(self.read.as_deref(), self.write.as_deref())
+    }
+}
+
 fn mcp(args: &[String]) -> Result<(), String> {
     use deckcraft_mcp::{Backend, Headless, Remote, Server, control_addr};
     let mut connect: Option<String> = None;
     let mut sample = false;
+    let mut roots = RootArgs::default();
     let mut it = args.iter();
     while let Some(a) = it.next() {
+        if roots.take(a, &mut it)? {
+            continue;
+        }
         match a.as_str() {
             "--connect" => connect = Some(it.next().cloned().ok_or("--connect needs a port or host:port")?),
             "--sample" => sample = true,
@@ -265,16 +310,71 @@ fn mcp(args: &[String]) -> Result<(), String> {
         }
     }
     let backend: Box<dyn Backend> = match connect {
+        Some(_) if roots.given() => {
+            return Err("--automation-read-root and --automation-write-root confine the headless server; \
+                        a running app (--connect) is not confined by them"
+                .into());
+        }
         Some(c) => Box::new(Remote::connect(&control_addr(&c)).map_err(|e| format!("can't reach the app at {c}: {e}"))?),
         None => {
+            let roots = roots.roots()?;
             let mut h = Headless::new();
             if sample {
                 deckcraft_engine::sample::open_sample(&mut h.session).map_err(|e| e.to_string())?;
             }
+            let show = |p: Option<&std::path::Path>| p.map_or_else(|| "none".to_string(), |p| p.display().to_string());
+            eprintln!("deckcraft-cli: files confined: read root {}, write root {}", show(roots.read_root()), show(roots.write_root()));
+            deckcraft_engine::file_access::confine_process(roots);
             Box::new(h)
         }
     };
     let mut server = Server::new(backend);
     let stdin = std::io::stdin();
     server.serve(stdin.lock(), std::io::stdout()).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn parse(v: &[&str]) -> Result<RootArgs, String> {
+        let v = args(v);
+        let mut roots = RootArgs::default();
+        let mut it = v.iter();
+        while let Some(a) = it.next() {
+            if !roots.take(a, &mut it)? {
+                return Err(format!("not a root flag: {a}"));
+            }
+        }
+        Ok(roots)
+    }
+
+    #[test]
+    fn mcp_automation_roots() {
+        let dir = std::env::temp_dir().join(format!("deckcraft-cli-roots-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("out")).unwrap();
+        let d = dir.to_string_lossy().into_owned();
+        let out = dir.join("out").to_string_lossy().into_owned();
+        let r = parse(&["--automation-read-root", &d, &format!("--automation-write-root={out}")]).unwrap().roots().unwrap();
+        assert!(r.read_root().is_some() && r.write_root().is_some());
+        let inside = dir.join("out/x.pptx").to_string_lossy().into_owned();
+        assert!(r.check(&inside, deckcraft_engine::file_access::Access::Write).is_ok());
+        assert!(r.check(&d, deckcraft_engine::file_access::Access::Write).is_err(), "the read root is not writable");
+        // Neither root: nothing by path.
+        let none = parse(&[]).unwrap().roots().unwrap();
+        assert!(none.check(&inside, deckcraft_engine::file_access::Access::Read).unwrap_err().contains("--automation-read-root"));
+        // A missing folder, a repeated flag, a missing value.
+        assert!(parse(&["--automation-read-root", "/definitely/not/a/folder"]).unwrap().roots().is_err());
+        assert!(parse(&["--automation-read-root", &d, "--automation-read-root", &out]).unwrap_err().contains("more than once"));
+        assert!(parse(&["--automation-write-root"]).unwrap_err().contains("needs a folder"));
+        assert!(parse(&["--automation-write-root="]).unwrap().roots().is_err());
+        // They confine the headless server only.
+        let e = mcp(&args(&["--connect", "1", "--automation-read-root", &d])).unwrap_err();
+        assert!(e.contains("--connect"), "{e}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

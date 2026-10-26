@@ -5,6 +5,30 @@ headless engine (no window); with `--connect PORT` it drives a running DeckCraft
 `--control PORT`, so an agent and a person can work on the same deck. `--sample` opens the sample
 deck.
 
+## Files the agent may read and write
+
+A deck or a picture the agent opens can carry instructions aimed at it (prompt injection). So the
+headless server reaches the file system only inside two folders given at start:
+
+```sh
+deckcraft-cli mcp --automation-read-root /work/talk --automation-write-root /work/talk/out
+```
+
+- Every path a tool or command reads (`open_presentation`, `file.open`, `insert_picture`,
+  `insert.picture`/`video`/`audio`, `picture.change`, picture fills) must lie inside the read root;
+  every path it writes (`save_presentation`, `export`, `file.save`/`saveAs`/`saveTemplate`/`export`,
+  `render_slide {path}`) inside the write root. Paths are made absolute against the working
+  directory and their links are followed before the comparison: `../` out of a root, an absolute
+  path elsewhere and a link that leads out are refused (`automation path rejected: …`), and
+  nothing is written.
+- The two roots are separate: a write root is not readable unless it is also inside the read root.
+- **Without the flags the headless server reads and writes no file by path** (`automation file
+  access refused: no read root …`). Decks can still come and go as data: `file.openBytes` and
+  `file.saveBytes`, pictures as `data` (base64). To give an agent your whole disk, say so:
+  `--automation-read-root / --automation-write-root /`.
+- The roots confine the headless server only: with `--connect` the agent drives your running app
+  with your rights, and the flags are refused.
+
 With `--connect`, the bridge sends the app's control key, which it reads from
 `DECKCRAFT_CONTROL_KEY` or from the key file the app writes at start. It sends the key only to
 loopback addresses; see [Keys](control-protocol.md#keys).
@@ -12,7 +36,8 @@ loopback addresses; see [Keys](control-protocol.md#keys).
 ```json
 {
   "mcpServers": {
-    "deckcraft": { "command": "deckcraft-cli", "args": ["mcp", "--connect", "7990"] }
+    "deckcraft": { "command": "deckcraft-cli", "args": ["mcp", "--connect", "7990"] },
+    "deckcraft-headless": { "command": "deckcraft-cli", "args": ["mcp", "--automation-read-root", "/work/talk", "--automation-write-root", "/work/talk"] }
   }
 }
 ```

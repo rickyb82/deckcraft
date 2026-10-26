@@ -148,13 +148,16 @@ same verbs:
 ```sh
 deckcraft-cli commands format.          # list commands
 deckcraft-cli run --sample --cmd 'slide.new={"layout":"titleOnly","title":"Hello"}' --save hello.deckcraft
-deckcraft-cli mcp                       # MCP server over stdio (headless)
+deckcraft-cli mcp --automation-read-root ~/talks --automation-write-root ~/talks
+                                        # MCP server over stdio (headless), files only in ~/talks
 deckcraft-cli mcp --connect 7990        # drive the running app (deckcraft --control 7990)
 ```
 
 The control channel listens on `127.0.0.1` only and every request carries the window's key, which
 the app writes to `<settings>/control-key.local-<port>` at start (`deckcraft-cli mcp --connect`
 and `deckcraft-cli app` read it for you); see [docs/control-protocol.md](docs/control-protocol.md).
+The headless MCP server reads and writes files only inside `--automation-read-root` /
+`--automation-write-root` (none without them); see [docs/mcp.md](docs/mcp.md).
 
 ## Roadmap
 

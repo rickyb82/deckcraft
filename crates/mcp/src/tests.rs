@@ -117,3 +117,44 @@ fn export_tool_lists_pdf_and_its_options() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `deckcraft-cli mcp --automation-read-root … --automation-write-root …`: a deck the agent reads
+/// can't steer it into reading or writing files elsewhere, through any tool.
+#[test]
+fn tools_are_held_to_the_automation_roots() {
+    use deckcraft_engine::file_access::{AutomationRoots, confine};
+    let base = std::env::temp_dir().join(format!("deckcraft-mcp-roots-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    for d in ["in", "out", "outside"] {
+        std::fs::create_dir_all(base.join(d)).unwrap();
+    }
+    std::fs::write(base.join("outside/secret.txt"), "top secret").unwrap();
+    let p = |rel: &str| base.join(rel).to_string_lossy().into_owned();
+    let roots = AutomationRoots::new(Some(&base.join("in")), Some(&base.join("out"))).unwrap();
+    let refused = |s: &mut Server, name: &str, args: Value| -> String {
+        let r = call(s, 9, "tools/call", json!({"name": name, "arguments": args}));
+        assert_eq!(r["result"]["isError"], true, "{name} should fail: {r}");
+        r["result"].to_string()
+    };
+    confine(Some(&roots), || {
+        let mut s = Server::new(Box::new(Headless::with_document()));
+        tool(&mut s, "save_presentation", json!({"path": p("out/deck.pptx")}));
+        tool(&mut s, "render_slide", json!({"path": p("out/slide.png")}));
+        assert!(refused(&mut s, "open_presentation", json!({"path": p("outside/secret.txt")})).contains("outside the read root"));
+        assert!(refused(&mut s, "insert_picture", json!({"path": p("outside/secret.txt")})).contains("outside the read root"));
+        assert!(refused(&mut s, "save_presentation", json!({"path": p("outside/deck.pptx")})).contains("outside the write root"));
+        assert!(refused(&mut s, "export", json!({"path": p("outside/deck.pdf")})).contains("outside the write root"));
+        assert!(refused(&mut s, "render_slide", json!({"path": p("outside/slide.png")})).contains("outside the write root"));
+        let e = refused(&mut s, "run_command", json!({"command": "file.saveAs", "params": {"path": p("outside/x.deckcraft")}}));
+        assert!(e.contains("outside the write root"), "{e}");
+        // No roots at all (the server's default): no file by path.
+        let none = AutomationRoots::new(None, None).unwrap();
+        confine(Some(&none), || {
+            assert!(refused(&mut s, "save_presentation", json!({"path": p("out/deck2.pptx")})).contains("--automation-write-root"));
+        });
+    });
+    assert!(base.join("out/deck.pptx").is_file() && base.join("out/slide.png").is_file());
+    assert_eq!(std::fs::read_dir(base.join("outside")).unwrap().count(), 1, "nothing written outside");
+    assert!(!base.join("out/deck2.pptx").exists());
+    let _ = std::fs::remove_dir_all(base);
+}
