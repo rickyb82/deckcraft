@@ -3,8 +3,9 @@
 //! Usage: `deckcraft [--control <port>] [--sample] [--show] [files…]`
 //!
 //! `--control <port>` (or `DECKCRAFT_CONTROL_PORT`) starts a localhost JSON-lines control server:
-//! `{"id":1,"method":"ui.inspect","params":{}}` → `{"id":1,"ok":true,"result":…}`.
-//! See `deckcraft_ui_egui::control` for the methods.
+//! `{"id":1,"key":"…","method":"ui.inspect","params":{}}` → `{"id":1,"ok":true,"result":…}`.
+//! Every request carries the window's key, written to `<settings dir>/control-key.local-<port>`.
+//! See `deckcraft_ui_egui::control` and `docs/control-protocol.md` for the methods.
 //!
 //! `log` records go to standard error and `<settings dir>/logs/deckcraft.log` (`RUST_LOG` sets the
 //! levels); see [`logging`].
@@ -21,7 +22,8 @@ mod logging;
 use deckcraft_engine::Session;
 use deckcraft_ui_egui::{Services, SlideApp};
 
-struct App(SlideApp);
+/// The app and, with `--control`, the key file the control server wrote (removed on exit).
+struct App(SlideApp, Option<control_server::KeyFile>);
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -35,21 +37,16 @@ impl eframe::App for App {
     }
     fn on_exit(&mut self) {
         save_prefs(&self.0);
+        if let Some(key_file) = &self.1 {
+            key_file.remove();
+        }
     }
 }
 
-/// The per-user settings directory: `ui.json`, `prefs.json` and `logs/` live here.
+/// The per-user settings directory: `ui.json`, `prefs.json`, `logs/` and the control key file
+/// live here; one rule shared with the MCP bridge, which reads the key file.
 fn config_dir() -> Option<std::path::PathBuf> {
-    if cfg!(target_os = "macos") {
-        std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join("Library/Application Support/DeckCraft"))
-    } else if cfg!(windows) {
-        std::env::var_os("APPDATA").map(|a| std::path::PathBuf::from(a).join("DeckCraft"))
-    } else {
-        std::env::var_os("XDG_CONFIG_HOME")
-            .map(std::path::PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
-            .map(|c| c.join("deckcraft"))
-    }
+    deckcraft_control_key::settings_dir()
 }
 
 fn prefs_path() -> Option<std::path::PathBuf> {
@@ -209,9 +206,12 @@ fn main() -> eframe::Result {
                 }
             }
             app.integrated_titlebar = cfg!(target_os = "macos");
-            if let Some(port) = control_port {
-                let rx = control_server::start(port, cc.egui_ctx.clone());
+            let mut key_file = None;
+            if let Some(port) = control_port
+                && let Some((rx, file)) = control_server::start(port, cc.egui_ctx.clone(), config_dir().as_deref())
+            {
                 app = app.with_control(rx);
+                key_file = file;
             }
             if sample && let Err(e) = deckcraft_engine::sample::open_sample(&mut app.session) {
                 log::error!("sample: {e}");
@@ -224,7 +224,7 @@ fn main() -> eframe::Result {
             if show {
                 app.start_show(0, false);
             }
-            Ok(Box::new(App(app)))
+            Ok(Box::new(App(app, key_file)))
         }),
     )
 }

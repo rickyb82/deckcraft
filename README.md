@@ -152,6 +152,10 @@ deckcraft-cli mcp                       # MCP server over stdio (headless)
 deckcraft-cli mcp --connect 7990        # drive the running app (deckcraft --control 7990)
 ```
 
+The control channel listens on `127.0.0.1` only and every request carries the window's key, which
+the app writes to `<settings>/control-key.local-<port>` at start (`deckcraft-cli mcp --connect`
+and `deckcraft-cli app` read it for you); see [docs/control-protocol.md](docs/control-protocol.md).
+
 ## Roadmap
 
 DeckCraft is in **alpha**. It covers **79% of PowerPoint's features by breadth** (92% of the core

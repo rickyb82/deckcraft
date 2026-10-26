@@ -5,6 +5,10 @@ headless engine (no window); with `--connect PORT` it drives a running DeckCraft
 `--control PORT`, so an agent and a person can work on the same deck. `--sample` opens the sample
 deck.
 
+With `--connect`, the bridge sends the app's control key, which it reads from
+`DECKCRAFT_CONTROL_KEY` or from the key file the app writes at start. It sends the key only to
+loopback addresses; see [Keys](control-protocol.md#keys).
+
 ```json
 {
   "mcpServers": {

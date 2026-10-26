@@ -34,6 +34,7 @@ impl Class {
 /// prefix.
 pub const TABLE: &[(&str, Class)] = &[
     ("geom", Class::Layer(0)),
+    ("control-key", Class::Standalone),
     // Codecs and containers (ported from FilmCraft): L0 standalone leaves, L1 codecs over
     // `bitstream`, and `media` (probe, decode, playback mixer) at L2.
     ("bitstream", Class::Standalone),

@@ -14,10 +14,13 @@ workspace = true
 deckcraft-engine = { workspace = true }
 deckcraft-ui-egui = { workspace = true }
 deckcraft-media = { workspace = true }
+deckcraft-control-key = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "links", "wayland", "x11"] }
 egui = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
+# The control channel's per-window key (`control_server.rs`).
+getrandom = "0.3"
 
 [build-dependencies]
 # Icon + VERSIONINFO for deckcraft.exe; build.rs only uses it when the target is Windows.
