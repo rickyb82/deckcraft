@@ -345,7 +345,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 t.text,
                 false,
             );
-            if resp.on_hover_text("Back (Esc)").clicked() {
+            if resp.on_hover_text(crate::familai_it::tr("Back (Esc)")).clicked() {
                 out.close = true;
             }
         } else {

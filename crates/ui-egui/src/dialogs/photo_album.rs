@@ -23,7 +23,7 @@ fn pick_album_picture(app: &mut SlideApp) -> Option<Value> {
     let path = if let Some(pick) = app.services.pick_open.as_mut() {
         pick("picture")
     } else {
-        app.set_status("Pass pictures to insert.photoAlbum");
+        app.set_status(crate::familai_it::tr("Pass pictures to insert.photoAlbum"));
         None
     };
     let path = path?;
@@ -48,16 +48,16 @@ fn pick_album_picture(app: &mut SlideApp) -> Option<Value> {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            app.set_status("The web build inserts album pictures from data passed to insert.photoAlbum");
+            app.set_status(crate::familai_it::tr("The web build inserts album pictures from data passed to insert.photoAlbum"));
             return None;
         }
     };
     if loaded.is_empty() {
-        app.set_status("That file is empty");
+        app.set_status(crate::familai_it::tr("That file is empty"));
         return None;
     }
     if loaded.len() > 32 * 1024 * 1024 {
-        app.set_status("That picture is larger than 32 MB");
+        app.set_status(crate::familai_it::tr("That picture is larger than 32 MB"));
         return None;
     }
     let name = std::path::Path::new(&path).file_name().and_then(std::ffi::OsStr::to_str).filter(|s| !s.is_empty()).unwrap_or("picture").to_string();
@@ -154,7 +154,7 @@ pub(super) fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog
     ui.set_min_width(440.0);
     egui::ScrollArea::vertical().max_height(520.0).id_salt("album_body").show(ui, |ui| {
         ui.set_min_width(420.0);
-        ui.label("Pictures in album");
+        ui.label(crate::familai_it::tr("Pictures in album"));
         let items = album_items(d).unwrap_or_default();
         let mut sel = d.get("sel", "0").parse::<usize>().unwrap_or(0);
         // Fixed height so adding pictures does not push Create past the window.
@@ -170,7 +170,7 @@ pub(super) fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog
         });
         d.fields.insert("sel".into(), sel.to_string());
         ui.horizontal(|ui| {
-            if ui.button("Add Pictures…").clicked()
+            if ui.button(crate::familai_it::tr("Add Pictures…")).clicked()
                 && let Some(item) = pick_album_picture(app)
             {
                 match album_items(d) {
@@ -180,20 +180,20 @@ pub(super) fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog
                         store_album_items(d, &list);
                         d.fields.insert("sel".into(), next.to_string());
                     }
-                    Some(_) => app.set_status("A photo album holds at most 48 pictures or text boxes"),
-                    None => app.set_status("The picture list is invalid"),
+                    Some(_) => app.set_status(crate::familai_it::tr("A photo album holds at most 48 pictures or text boxes")),
+                    None => app.set_status(crate::familai_it::tr("The picture list is invalid")),
                 }
             }
-            if ui.button("New Text Box").clicked() {
+            if ui.button(crate::familai_it::tr("New Text Box")).clicked() {
                 let text = d.get("boxText", "Text Box");
                 let text = text.trim();
                 if text.is_empty() {
-                    app.set_status("Type the text for the new text box");
+                    app.set_status(crate::familai_it::tr("Type the text for the new text box"));
                 } else if text.chars().count() > 400 {
-                    app.set_status("Text is longer than 400 characters");
+                    app.set_status(crate::familai_it::tr("Text is longer than 400 characters"));
                 } else if let Some(mut list) = album_items(d) {
                     if list.len() >= 48 {
-                        app.set_status("A photo album holds at most 48 pictures or text boxes");
+                        app.set_status(crate::familai_it::tr("A photo album holds at most 48 pictures or text boxes"));
                     } else {
                         list.push(json!({"text": text}));
                         let next = list.len().saturating_sub(1);
@@ -202,7 +202,7 @@ pub(super) fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog
                     }
                 }
             }
-            if ui.button("Remove").clicked()
+            if ui.button(crate::familai_it::tr("Remove")).clicked()
                 && let Some(mut list) = album_items(d)
                 && let Some(i) = d.get("sel", "0").parse::<usize>().ok()
                 && i < list.len()
@@ -218,36 +218,36 @@ pub(super) fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog
         ui.label(album_picture_status(&items, sel));
         ui.horizontal_wrapped(|ui| {
             ui.add_enabled_ui(picture, |ui| {
-                if ui.button("Rotate Left").clicked() {
+                if ui.button(crate::familai_it::tr("Rotate Left")).clicked() {
                     with_selected_picture(d, |obj| {
                         let cur = obj.get("rot").and_then(Value::as_f64).unwrap_or(0.0);
                         let next = ((cur - 90.0) % 360.0 + 360.0) % 360.0;
                         obj.insert("rot".into(), json!(next));
                     });
                 }
-                if ui.button("Rotate Right").clicked() {
+                if ui.button(crate::familai_it::tr("Rotate Right")).clicked() {
                     with_selected_picture(d, |obj| {
                         let cur = obj.get("rot").and_then(Value::as_f64).unwrap_or(0.0);
                         let next = ((cur + 90.0) % 360.0 + 360.0) % 360.0;
                         obj.insert("rot".into(), json!(next));
                     });
                 }
-                if ui.button("More Brightness").clicked() {
+                if ui.button(crate::familai_it::tr("More Brightness")).clicked() {
                     nudge_picture(d, "brightness", 0.1);
                 }
-                if ui.button("Less Brightness").clicked() {
+                if ui.button(crate::familai_it::tr("Less Brightness")).clicked() {
                     nudge_picture(d, "brightness", -0.1);
                 }
-                if ui.button("More Contrast").clicked() {
+                if ui.button(crate::familai_it::tr("More Contrast")).clicked() {
                     nudge_picture(d, "contrast", 0.1);
                 }
-                if ui.button("Less Contrast").clicked() {
+                if ui.button(crate::familai_it::tr("Less Contrast")).clicked() {
                     nudge_picture(d, "contrast", -0.1);
                 }
             });
         });
         ui.add_space(4.0);
-        ui.label("Picture layout");
+        ui.label(crate::familai_it::tr("Picture layout"));
         album_choice(
             ui,
             d,
@@ -265,7 +265,7 @@ pub(super) fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog
                 ("4title", "4 pictures with title"),
             ],
         );
-        ui.label("Frame shape");
+        ui.label(crate::familai_it::tr("Frame shape"));
         album_choice(
             ui,
             d,
@@ -277,7 +277,7 @@ pub(super) fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog
         );
         check(ui, d, "Captions under pictures", "captions", false);
         check(ui, d, "ALL pictures black and white", "grayscale", false);
-        ui.label("Album theme");
+        ui.label(crate::familai_it::tr("Album theme"));
         album_choice(ui, d, "album_theme", "Album theme", "theme", "DeckCraft", &ALBUM_THEMES.iter().map(|n| (*n, *n)).collect::<Vec<_>>());
     });
     let captions = d.fields.get("captions").is_some_and(|v| v == "1");
@@ -286,11 +286,11 @@ pub(super) fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog
     let (ok, cancel) = buttons(ui, if editing { "Update" } else { "Create" });
     if ok {
         let Some(list) = album_items(d) else {
-            app.set_status("The picture list is invalid");
+            app.set_status(crate::familai_it::tr("The picture list is invalid"));
             return false;
         };
         if list.is_empty() {
-            app.set_status("Add a picture or a text box first");
+            app.set_status(crate::familai_it::tr("Add a picture or a text box first"));
             return false;
         }
         let layout = d.get("layout", "1");

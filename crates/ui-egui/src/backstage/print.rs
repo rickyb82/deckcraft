@@ -109,8 +109,10 @@ pub(super) fn print(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
             combo.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, "Print range"));
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                let l = ui.label("Slides:");
-                let r = ui.add(egui::TextEdit::singleline(&mut bs.print_range).hint_text("e.g. 1-3, 5").desired_width(176.0)).labelled_by(l.id);
+                let l = ui.label(crate::familai_it::tr("Slides:"));
+                let r = ui
+                    .add(egui::TextEdit::singleline(&mut bs.print_range).hint_text(crate::familai_it::tr("e.g. 1-3, 5")).desired_width(176.0))
+                    .labelled_by(l.id);
                 if r.changed() {
                     // Typing a range picks Custom Range, as in PowerPoint.
                     bs.print_scope = if bs.print_range.trim().is_empty() { PrintScope::All } else { PrintScope::Custom };
@@ -161,10 +163,10 @@ pub(super) fn print(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
                     .widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, "Orientation"));
             });
             ui.add_space(4.0);
-            if ui.checkbox(&mut bs.print_hidden, "Print Hidden Slides").changed() {
+            if ui.checkbox(&mut bs.print_hidden, crate::familai_it::tr("Print Hidden Slides")).changed() {
                 bs.preview_page = 0;
             }
-            ui.checkbox(&mut bs.print_frame, "Frame Slides");
+            ui.checkbox(&mut bs.print_frame, crate::familai_it::tr("Frame Slides"));
             ui.add_space(6.0);
             if ui.link("Edit Header & Footer").clicked() {
                 let _ = app.run("app.dialog", json!({"id": "headerFooter"}));
@@ -312,7 +314,7 @@ pub(super) fn export(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
                         ui,
                         &["Keeps the layout, fonts and pictures", "Opens on any device with a PDF viewer", "The presentation keeps its own file"],
                     );
-                    ui.checkbox(&mut bs.pdf_hidden, "Include hidden slides");
+                    ui.checkbox(&mut bs.pdf_hidden, crate::familai_it::tr("Include hidden slides"));
                     ui.add_space(10.0);
                     if square_button(ui, Icon::File, "Create PDF", true).clicked() {
                         app.export_as("pdf", json!({"includeHidden": bs.pdf_hidden}));
@@ -359,8 +361,8 @@ pub(super) fn export(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
                     ui.add_space(12.0);
                     let png = bs.file_type == "png";
                     if png {
-                        ui.checkbox(&mut bs.png_transparent, "Transparent background")
-                            .on_hover_text("Leave the slide background out: only what is on the slide is drawn");
+                        ui.checkbox(&mut bs.png_transparent, crate::familai_it::tr("Transparent background"))
+                            .on_hover_text(crate::familai_it::tr("Leave the slide background out: only what is on the slide is drawn"));
                         ui.add_space(8.0);
                     }
                     if square_button(ui, Icon::SaveAs, "Save As", true).clicked() {

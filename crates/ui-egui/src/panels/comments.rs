@@ -15,8 +15,8 @@ pub(super) fn revisions(app: &mut SlideApp, ui: &mut Ui) {
     }
     ui.add_space(4.0);
     if changes.is_empty() {
-        ui.label("No differences left.");
-        if ui.button("End Review").clicked() {
+        ui.label(crate::familai_it::tr("No differences left."));
+        if ui.button(crate::familai_it::tr("End Review")).clicked() {
             run(app, "review.endCompare", json!({}));
             app.ui.pane = None;
         }
@@ -48,10 +48,10 @@ pub(super) fn revisions(app: &mut SlideApp, ui: &mut Ui) {
                     run(app, "slide.go", json!({"index": (slide as usize).min(max)}));
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("Reject").clicked() {
+                    if ui.small_button(crate::familai_it::tr("Reject")).clicked() {
                         run(app, "review.reject", json!({"index": i}));
                     }
-                    if ui.small_button("Accept").clicked() {
+                    if ui.small_button(crate::familai_it::tr("Accept")).clicked() {
                         run(app, "review.accept", json!({"index": i}));
                     }
                 });
@@ -66,7 +66,7 @@ pub(super) fn revisions(app: &mut SlideApp, ui: &mut Ui) {
 
 pub(super) fn comments(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
-    if ui.button("+ New Comment").clicked() {
+    if ui.button(crate::familai_it::tr("+ New Comment")).clicked() {
         app.dialog = Some(crate::dialogs::Dialog::new("comment"));
     }
     ui.separator();
@@ -150,7 +150,8 @@ fn comment_card(app: &mut SlideApp, ui: &mut Ui, slide: usize, index: usize, c: 
                     }
                     let id = ui.scope_id().with(("reply", slide, index));
                     let mut txt: String = ui.data_mut(|d| d.get_temp(id).unwrap_or_default());
-                    let r = ui.add(egui::TextEdit::singleline(&mut txt).hint_text("Reply…").desired_width(ui.available_width()));
+                    let r =
+                        ui.add(egui::TextEdit::singleline(&mut txt).hint_text(crate::familai_it::tr("Reply…")).desired_width(ui.available_width()));
                     if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !txt.trim().is_empty() {
                         focus_comment(app, slide, index);
                         run(app, "comment.reply", json!({"index": index, "text": txt}));

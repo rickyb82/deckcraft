@@ -49,6 +49,7 @@ fn big_button_width(text_w: f32, split: bool) -> f32 {
 /// response). Like Office's split buttons, the icon and the label text run the main command; only
 /// the chevron at the end of the label row opens the menu.
 pub fn big_button_ex(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, split: bool, selected: bool) -> (Response, Option<Response>) {
+    let label = crate::familai_it::tr(label);
     let t = Tokens::get(ui.ctx());
     let font = theme::font(11.0);
     let lines: Vec<&str> = wrap_label(label);
@@ -133,6 +134,7 @@ pub fn small_button(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, selecte
 /// Draw a small named button, optionally with a separately named options chevron, and return
 /// both click targets.
 pub fn small_button_ex(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, selected: bool, split: bool) -> (Response, Option<Response>) {
+    let label = crate::familai_it::tr(label);
     small_button_named(ui, icon, label, if label.is_empty() { "Options" } else { label }, enabled, selected, split)
 }
 
@@ -262,6 +264,7 @@ pub fn check_item(ui: &mut Ui, label: &str, enabled: bool, on: bool) -> Response
 
 /// A square icon toggle (B, I, U, alignment…).
 pub fn icon_toggle(ui: &mut Ui, icon: Icon, tip: &str, enabled: bool, on: bool) -> Response {
+    let tip = crate::familai_it::tr(tip);
     let t = Tokens::get(ui.ctx());
     let (rect, resp) = ui.allocate_exact_size(vec2(24.0, 22.0), if enabled { Sense::click() } else { Sense::hover() });
     let painter = ui.painter_at(rect);
@@ -469,7 +472,7 @@ pub fn color_grid(ui: &mut Ui, scheme: &ColorScheme, none_label: Option<&str>) -
     let id = ui.scope_id().with("hex");
     let mut hex: String = ui.data_mut(|d| d.get_temp::<String>(id).unwrap_or_default());
     ui.horizontal(|ui| {
-        ui.label("More Colors… #");
+        ui.label(crate::familai_it::tr("More Colors… #"));
         let r = ui.add(egui::TextEdit::singleline(&mut hex).desired_width(70.0).hint_text("RRGGBB"));
         if r.lost_focus()
             && ui.input(|i| i.key_pressed(egui::Key::Enter))
@@ -479,7 +482,11 @@ pub fn color_grid(ui: &mut Ui, scheme: &ColorScheme, none_label: Option<&str>) -
         }
     });
     ui.data_mut(|d| d.insert_temp(id, hex));
-    if ui.button("Eyedropper").on_hover_text("Click the slide to take the colour under the pointer").clicked() {
+    if ui
+        .button(crate::familai_it::tr("Eyedropper"))
+        .on_hover_text(crate::familai_it::tr("Click the slide to take the colour under the pointer"))
+        .clicked()
+    {
         crate::eyedropper::request(ui.ctx());
         ui.close();
     }
@@ -776,7 +783,7 @@ mod tests {
         let scheme = deckcraft_model::Theme::default().colors;
         let mut harness = egui_kittest::Harness::builder().with_size(vec2(400.0, 500.0)).build_ui(|ui| {
             theme::install_fonts(ui.ctx());
-            let r = ui.button("Pick");
+            let r = ui.button(crate::familai_it::tr("Pick"));
             color_popup(&r).show(|ui| {
                 if let Some(c) = color_grid(ui, &scheme, None) {
                     *picked.borrow_mut() = Some(c);
@@ -804,7 +811,7 @@ mod tests {
         let scheme = deckcraft_model::Theme::default().colors;
         let mut harness = egui_kittest::Harness::builder().with_size(vec2(400.0, 500.0)).build_ui(|ui| {
             theme::install_fonts(ui.ctx());
-            let r = ui.button("Pick");
+            let r = ui.button(crate::familai_it::tr("Pick"));
             color_popup(&r).show(|ui| {
                 if let Some(c) = color_grid(ui, &scheme, None) {
                     *picked.borrow_mut() = Some(c);

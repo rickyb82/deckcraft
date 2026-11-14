@@ -39,7 +39,7 @@ pub(super) fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
                 }
             }
             ui.separator();
-            ui.label("Recolor");
+            ui.label(crate::familai_it::tr("Recolor"));
             let sc = scheme(app);
             let presets = deckcraft_engine::cmd::recolor::presets();
             let names: Vec<String> = presets.iter().map(|(_, l)| l.clone()).collect();
@@ -61,14 +61,18 @@ pub(super) fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
             ui.separator();
             // As in PowerPoint, the pointer picks the colour in the picture itself: a colour
             // chosen from a grid almost never matches a photo's pixels.
-            if ui.button("Set Transparent Color").on_hover_text("Click a colour in the picture to make it transparent").clicked() {
+            if ui
+                .button(crate::familai_it::tr("Set Transparent Color"))
+                .on_hover_text(crate::familai_it::tr("Click a colour in the picture to make it transparent"))
+                .clicked()
+            {
                 crate::eyedropper::request_transparent_color(ui.ctx());
                 ui.close();
             }
         });
         let r = big_button(ui, Icon::ArtisticEffects, "Artistic\nEffects", enabled(app, "picture.artisticEffect"));
         egui::Popup::menu(&r).show(|ui| {
-            if ui.button("None").clicked() {
+            if ui.button(crate::familai_it::tr("None")).clicked() {
                 run(app, "picture.artisticEffect", json!({"effect": "none"}));
             }
             for (e, l) in deckcraft_engine::cmd::artistic::EFFECTS {
@@ -142,14 +146,14 @@ pub(super) fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
                 }
             }
             ui.separator();
-            ui.menu_button("Weight", |ui| {
+            ui.menu_button(crate::familai_it::tr("Weight"), |ui| {
                 for w in [0.25, 0.5, 0.75, 1.0, 1.5, 2.25, 3.0, 4.5, 6.0] {
                     if ui.button(format!("{w} pt")).clicked() {
                         run(app, "shape.line", json!({"width": w}));
                     }
                 }
             });
-            ui.menu_button("Dashes", |ui| {
+            ui.menu_button(crate::familai_it::tr("Dashes"), |ui| {
                 for (l, d) in [
                     ("Solid", "solid"),
                     ("Round Dot", "sysDot"),
@@ -164,7 +168,7 @@ pub(super) fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
                 }
             });
         });
-        if ui.small_button("Reset Style").on_hover_text("Remove the picture style").clicked() {
+        if ui.small_button(crate::familai_it::tr("Reset Style")).on_hover_text(crate::familai_it::tr("Remove the picture style")).clicked() {
             run(app, "picture.style", json!({"style": "none"}));
         }
         big(app, ui, Icon::AltText, "Alt\nText", "app.dialog", json!({"id": "altText"}));
@@ -173,7 +177,7 @@ pub(super) fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
     group(ui, |ui| {
         let r = big_button(ui, Icon::Crop, "Crop", true);
         egui::Popup::menu(&r).show(|ui| {
-            ui.label("Crop to Shape");
+            ui.label(crate::familai_it::tr("Crop to Shape"));
             if let Some(p) = shapes_gallery(ui) {
                 run(app, "shape.change", json!({"preset": p}));
             }
@@ -291,8 +295,8 @@ fn compress_menu(app: &mut SlideApp, ui: &mut Ui) {
     let id = egui::Id::unique("compress_pictures_opts");
     let (mut ppi, mut only_selected, mut delete_cropped): (u32, bool, bool) = ui.data_mut(|d| d.get_temp(id).unwrap_or((220, true, true)));
     ui.label(egui::RichText::new("Compression options").strong());
-    ui.checkbox(&mut only_selected, "Apply only to this picture");
-    ui.checkbox(&mut delete_cropped, "Delete cropped areas of pictures");
+    ui.checkbox(&mut only_selected, crate::familai_it::tr("Apply only to this picture"));
+    ui.checkbox(&mut delete_cropped, crate::familai_it::tr("Delete cropped areas of pictures"));
     ui.separator();
     ui.label(egui::RichText::new("Resolution").strong());
     for (v, label) in [
@@ -305,7 +309,7 @@ fn compress_menu(app: &mut SlideApp, ui: &mut Ui) {
     }
     ui.data_mut(|d| d.insert_temp(id, (ppi, only_selected, delete_cropped)));
     ui.separator();
-    if ui.button("Compress").clicked() {
+    if ui.button(crate::familai_it::tr("Compress")).clicked() {
         let p = json!({"ppi": ppi, "deleteCropped": delete_cropped, "all": !only_selected});
         match app.session.execute("picture.compress", &p) {
             Ok(r) => {

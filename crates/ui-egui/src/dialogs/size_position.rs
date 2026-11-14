@@ -189,7 +189,7 @@ pub(super) fn size_position_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dial
     check(ui, d, "Lock aspect ratio", "lock", false);
     ui.add_space(8.0);
     ui.label(egui::RichText::new("Position").strong());
-    ui.label("From the top-left corner of the slide");
+    ui.label(crate::familai_it::tr("From the top-left corner of the slide"));
     text_row(ui, d, "Horizontal (in):", "x");
     text_row(ui, d, "Vertical (in):", "y");
     reconcile_size_fields(d);

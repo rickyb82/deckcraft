@@ -133,7 +133,7 @@ pub(super) fn paragraph_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) 
     }
     let mut open_tabs = false;
     ui.horizontal(|ui| {
-        if ui.button("Tabs…").clicked() {
+        if ui.button(crate::familai_it::tr("Tabs…")).clicked() {
             open_tabs = true;
         }
     });
@@ -151,27 +151,27 @@ pub(super) fn paragraph_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) 
     }
     if ok {
         let Some(before_in) = finite_pt(&d.get("before", "")) else {
-            app.set_status("Indent before text must be a number of inches");
+            app.set_status(crate::familai_it::tr("Indent before text must be a number of inches"));
             return false;
         };
         let Some(after_in) = finite_pt(&d.get("after", "")) else {
-            app.set_status("Indent after text must be a number of inches");
+            app.set_status(crate::familai_it::tr("Indent after text must be a number of inches"));
             return false;
         };
         let Some(by_in) = finite_pt(&d.get("by", "")) else {
-            app.set_status("Special indent must be a number of inches");
+            app.set_status(crate::familai_it::tr("Special indent must be a number of inches"));
             return false;
         };
         let Some(space_before) = finite_pt(&d.get("spaceBefore", "")) else {
-            app.set_status("Spacing before must be a number");
+            app.set_status(crate::familai_it::tr("Spacing before must be a number"));
             return false;
         };
         let Some(space_after) = finite_pt(&d.get("spaceAfter", "")) else {
-            app.set_status("Spacing after must be a number");
+            app.set_status(crate::familai_it::tr("Spacing after must be a number"));
             return false;
         };
         let Some(line_value) = finite_pt(&d.get("lineValue", "")) else {
-            app.set_status("Line spacing must be a number");
+            app.set_status(crate::familai_it::tr("Line spacing must be a number"));
             return false;
         };
         let mut params = json!({

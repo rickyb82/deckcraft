@@ -47,14 +47,14 @@ fn edit_points_menu(app: &mut SlideApp, ui: &mut egui::Ui, sh: &deckcraft_model:
             }
         }
         // Each of these renumbers the points, so the picked segment is dropped.
-        if ui.button("Add Point").clicked() {
+        if ui.button(crate::familai_it::tr("Add Point")).clicked() {
             let t = app.session.tool.edit_segment_t.unwrap_or(0.5);
             let _ = app.run("shape.addPoint", json!({"path": path, "segment": index, "t": t}));
             app.session.tool.edit_segment = None;
             ui.close();
         }
         let closed = deckcraft_engine::cmd::points::closed_at(sh, path, index);
-        if ui.add_enabled(closed == Some(true), egui::Button::new("Delete Segment")).clicked() {
+        if ui.add_enabled(closed == Some(true), egui::Button::new(crate::familai_it::tr("Delete Segment"))).clicked() {
             let _ = app.run("shape.deleteSegment", json!({"path": path, "segment": index}));
             app.session.tool.edit_segment = None;
             ui.close();
@@ -78,7 +78,7 @@ fn edit_points_menu(app: &mut SlideApp, ui: &mut egui::Ui, sh: &deckcraft_model:
                 ui.close();
             }
         }
-        if ui.button("Delete Point").clicked() {
+        if ui.button(crate::familai_it::tr("Delete Point")).clicked() {
             let _ = app.run("shape.deletePoint", json!({"path": path, "index": index}));
             app.session.tool.edit_vertex = None;
             ui.close();
@@ -95,7 +95,7 @@ fn edit_points_menu(app: &mut SlideApp, ui: &mut egui::Ui, sh: &deckcraft_model:
         }
         ui.separator();
     }
-    if ui.button("Exit Edit Points").clicked() {
+    if ui.button(crate::familai_it::tr("Exit Edit Points")).clicked() {
         let _ = app.run("shape.editPoints", json!({"on": false}));
         ui.close();
     }
@@ -156,12 +156,12 @@ fn spelling_menu(app: &mut SlideApp, ui: &mut egui::Ui, w: &crate::squiggles::Me
             ui.close();
         }
     }
-    if ui.button("Ignore All").clicked() {
+    if ui.button(crate::familai_it::tr("Ignore All")).clicked() {
         app.squiggles.ignore(&w.word);
         app.squiggles.menu_word = None;
         ui.close();
     }
-    if ui.button("Add to Dictionary").clicked() {
+    if ui.button(crate::familai_it::tr("Add to Dictionary")).clicked() {
         if let Err(e) = app.session.execute("review.addToDictionary", &json!({"word": w.word})) {
             app.set_status(e.to_string());
         }
@@ -172,7 +172,7 @@ fn spelling_menu(app: &mut SlideApp, ui: &mut egui::Ui, w: &crate::squiggles::Me
 }
 
 fn text_items(app: &mut SlideApp, ui: &mut egui::Ui) {
-    if ui.button("Paragraph…").clicked() {
+    if ui.button(crate::familai_it::tr("Paragraph…")).clicked() {
         app.dialog = Some(crate::dialogs::Dialog::new("paragraph"));
         ui.close();
     }
@@ -182,46 +182,46 @@ fn text_items(app: &mut SlideApp, ui: &mut egui::Ui) {
             ui.close();
         }
     }
-    if ui.button("Link…").clicked() {
+    if ui.button(crate::familai_it::tr("Link…")).clicked() {
         app.dialog = Some(crate::dialogs::Dialog::new("hyperlink"));
         ui.close();
     }
     ui.separator();
-    if ui.button("Format Shape…").clicked() {
+    if ui.button(crate::familai_it::tr("Format Shape…")).clicked() {
         let _ = app.run("view.pane", json!({"pane": "format"}));
         ui.close();
     }
 }
 
 fn shape_items(app: &mut SlideApp, ui: &mut egui::Ui) {
-    if ui.button("Edit Text").clicked() {
+    if ui.button(crate::familai_it::tr("Edit Text")).clicked() {
         let _ = app.run("text.edit", json!({}));
         ui.close();
     }
     if crate::ribbon::enabled(app, "shape.editPoints")
         && app.session.active().is_some_and(|d| d.selection.shapes.len() == 1 && d.selected_shapes().iter().all(|s| !s.is_line()))
-        && ui.button("Edit Points").clicked()
+        && ui.button(crate::familai_it::tr("Edit Points")).clicked()
     {
         let _ = app.run("shape.editPoints", json!({"on": true}));
         ui.close();
     }
-    if ui.button("Font…").clicked() {
+    if ui.button(crate::familai_it::tr("Font…")).clicked() {
         let _ = app.run("format.fontDialog", json!({}));
         ui.close();
     }
-    if ui.button("Paragraph…").clicked() {
+    if ui.button(crate::familai_it::tr("Paragraph…")).clicked() {
         let _ = app.run("format.paragraphDialog", json!({}));
         ui.close();
     }
-    ui.menu_button("Bring to Front", |ui| {
+    ui.menu_button(crate::familai_it::tr("Bring to Front"), |ui| {
         crate::ribbon::menu_item(app, ui, crate::icons::Icon::BringToFront, "Bring to Front", "arrange.bringToFront", json!({}));
         crate::ribbon::menu_item(app, ui, crate::icons::Icon::BringForward, "Bring Forward", "arrange.bringForward", json!({}));
     });
-    ui.menu_button("Send to Back", |ui| {
+    ui.menu_button(crate::familai_it::tr("Send to Back"), |ui| {
         crate::ribbon::menu_item(app, ui, crate::icons::Icon::SendToBack, "Send to Back", "arrange.sendToBack", json!({}));
         crate::ribbon::menu_item(app, ui, crate::icons::Icon::SendBackward, "Send Backward", "arrange.sendBackward", json!({}));
     });
-    ui.menu_button("Group", |ui| {
+    ui.menu_button(crate::familai_it::tr("Group"), |ui| {
         crate::ribbon::menu_item(app, ui, crate::icons::Icon::Group, "Group", "arrange.group", json!({}));
         crate::ribbon::menu_item(app, ui, crate::icons::Icon::Ungroup, "Ungroup", "arrange.ungroup", json!({}));
     });
@@ -232,27 +232,27 @@ fn shape_items(app: &mut SlideApp, ui: &mut egui::Ui) {
     }
     let picture =
         app.session.active().is_some_and(|d| d.selected_shapes().iter().any(|s| matches!(s.kind, deckcraft_model::ShapeKind::Picture { .. })));
-    if picture && ui.button("Change Picture…").clicked() {
+    if picture && ui.button(crate::familai_it::tr("Change Picture…")).clicked() {
         let _ = app.run("app.changePictureDialog", json!({}));
         ui.close();
     }
-    if ui.button("Link…").clicked() {
+    if ui.button(crate::familai_it::tr("Link…")).clicked() {
         app.dialog = Some(crate::dialogs::Dialog::new("hyperlink"));
         ui.close();
     }
-    if ui.button("Edit Alt Text…").clicked() {
+    if ui.button(crate::familai_it::tr("Edit Alt Text…")).clicked() {
         app.dialog = Some(crate::dialogs::Dialog::new("altText"));
         ui.close();
     }
-    if ui.button("Set as Default Shape").clicked() {
+    if ui.button(crate::familai_it::tr("Set as Default Shape")).clicked() {
         let _ = app.run("shape.setDefault", json!({}));
         ui.close();
     }
-    if ui.button("Size and Position…").clicked() {
+    if ui.button(crate::familai_it::tr("Size and Position…")).clicked() {
         let _ = app.run("shape.sizePosition", json!({}));
         ui.close();
     }
-    if ui.button("Format Shape…").clicked() {
+    if ui.button(crate::familai_it::tr("Format Shape…")).clicked() {
         let _ = app.run("view.pane", json!({"pane": "format"}));
         ui.close();
     }
@@ -272,9 +272,9 @@ fn slide_items(app: &mut SlideApp, ui: &mut egui::Ui) {
             }
         }
     });
-    ui.menu_button("Grid and Guides", |ui| {
+    ui.menu_button(crate::familai_it::tr("Grid and Guides"), |ui| {
         let mut on = app.ui.guides;
-        if ui.checkbox(&mut on, "Guides").clicked() {
+        if ui.checkbox(&mut on, crate::familai_it::tr("Guides")).clicked() {
             let _ = app.run("view.guides", json!({"on": on}));
         }
         for (label, vertical) in [("Add Vertical Guide", true), ("Add Horizontal Guide", false)] {
@@ -285,15 +285,15 @@ fn slide_items(app: &mut SlideApp, ui: &mut egui::Ui) {
             }
         }
     });
-    if ui.button("Reset Slide").clicked() {
+    if ui.button(crate::familai_it::tr("Reset Slide")).clicked() {
         let _ = app.run("slide.reset", json!({}));
         ui.close();
     }
-    if ui.button("Format Background…").clicked() {
+    if ui.button(crate::familai_it::tr("Format Background…")).clicked() {
         let _ = app.run("view.pane", json!({"pane": "background"}));
         ui.close();
     }
-    if ui.button("New Comment").clicked() {
+    if ui.button(crate::familai_it::tr("New Comment")).clicked() {
         app.dialog = Some(crate::dialogs::Dialog::new("comment"));
         ui.close();
     }

@@ -5,7 +5,7 @@ use super::{SlideApp, Tokens, Ui, json, run, theme};
 pub(super) fn thesaurus(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let mut q = app.thesaurus_query.clone();
-    let edit = ui.add(egui::TextEdit::singleline(&mut q).hint_text("Search for a word").desired_width(f32::INFINITY));
+    let edit = ui.add(egui::TextEdit::singleline(&mut q).hint_text(crate::familai_it::tr("Search for a word")).desired_width(f32::INFINITY));
     if edit.changed() {
         app.thesaurus_query = q.clone();
     }

@@ -100,7 +100,7 @@ pub(super) fn theme_fonts_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog
     });
     d.fields.insert("schemeName".into(), name);
     ui.label(egui::RichText::new("Heading and body fonts for this presentation.").size(11.0).color(Tokens::get(ui.ctx()).text_dim));
-    let (ok, cancel) = buttons(ui, "Save");
+    let (ok, cancel) = buttons(ui, crate::familai_it::tr("Save"));
     if ok {
         match theme_font_payload(d) {
             Ok(payload) => return app.run("design.fonts", payload).is_ok(),

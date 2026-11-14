@@ -23,8 +23,8 @@ pub fn about(_app: &mut SlideApp, ui: &mut Ui) {
         ui.label(egui::RichText::new("DeckCraft").font(theme::bold(22.0)));
         ui.label(egui::RichText::new(version_line()).color(t.text_dim));
         ui.add_space(6.0);
-        ui.label("Presentations and slide shows, rebuilt from scratch in pure Rust.");
-        ui.label("An open-source, clean-room project. Not affiliated with Microsoft.");
+        ui.label(crate::familai_it::tr("Presentations and slide shows, rebuilt from scratch in pure Rust."));
+        ui.label(crate::familai_it::tr("An open-source, clean-room project. Not affiliated with Microsoft."));
         ui.add_space(6.0);
         ui.hyperlink_to("Join our community on Discord", deckcraft_engine::links::DISCORD);
         ui.hyperlink_to("getartcraft.com/apps/deckcraft", deckcraft_engine::links::APP_PAGE);
@@ -109,7 +109,7 @@ mod about_credits_tests {
             let mut block = egui::Rect::NOTHING;
             let mut whole = egui::Rect::NOTHING;
             let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-                tabs = ui.label("About").rect;
+                tabs = ui.label(crate::familai_it::tr("About")).rect;
                 block = credits_block(ui, models);
                 whole = ui.min_rect();
             });

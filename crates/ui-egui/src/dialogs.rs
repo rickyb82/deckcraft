@@ -83,7 +83,7 @@ pub fn show(app: &mut SlideApp, ctx: &egui::Context) {
     let Some(mut d) = app.dialog.take() else { return };
     let mut open = true;
     let mut close = false;
-    let mut window = egui::Window::new(title(&d.id))
+    let mut window = egui::Window::new(crate::familai_it::tr(title(&d.id)))
         .id(egui::Id::unique(("dialog", d.id.clone())))
         .collapsible(false)
         .resizable(false)
@@ -137,7 +137,7 @@ fn buttons(ui: &mut Ui, ok_label: &str) -> (bool, bool) {
         {
             ok = true;
         }
-        if ui.add(egui::Button::new("Cancel").min_size(vec2(72.0, 24.0))).clicked() {
+        if ui.add(egui::Button::new(crate::familai_it::tr("Cancel")).min_size(vec2(72.0, 24.0))).clicked() {
             cancel = true;
         }
     });

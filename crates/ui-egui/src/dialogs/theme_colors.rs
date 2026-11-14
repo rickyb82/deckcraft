@@ -70,7 +70,7 @@ pub(super) fn theme_colors_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialo
     ui.add_space(6.0);
     let mut name = d.get("schemeName", "");
     ui.horizontal(|ui| {
-        ui.label("Name:");
+        ui.label(crate::familai_it::tr("Name:"));
         let resp = ui.add(egui::TextEdit::singleline(&mut name).desired_width(280.0).id_salt("schemeName"));
         let shown = name.clone();
         resp.widget_info(move || {
@@ -81,7 +81,7 @@ pub(super) fn theme_colors_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialo
     });
     d.fields.insert("schemeName".into(), name);
     ui.label(egui::RichText::new("Applies to this presentation's theme colours.").size(11.0).color(Tokens::get(ui.ctx()).text_dim));
-    let (ok, cancel) = buttons(ui, "Save");
+    let (ok, cancel) = buttons(ui, crate::familai_it::tr("Save"));
     if ok {
         match theme_color_payload(d) {
             Ok(payload) => return app.run("design.colors", payload).is_ok(),

@@ -22,6 +22,7 @@ pub mod control;
 pub mod dialogs;
 pub mod doc_window;
 pub mod eyedropper;
+pub mod familai_it;
 pub mod icons;
 pub mod media;
 pub mod menus;

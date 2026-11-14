@@ -4,7 +4,7 @@ use super::{SlideApp, Tokens, Ui, Value, json, run};
 /// Shift+Tab demote and promote, Backspace in an empty line removes it.
 pub(super) fn smartart(app: &mut SlideApp, ui: &mut Ui) {
     let Some((gid, d)) = app.session.active().and_then(deckcraft_engine::cmd::smartart::selected) else {
-        ui.label("Select a Diagram graphic to edit its text.");
+        ui.label(crate::familai_it::tr("Select a Diagram graphic to edit its text."));
         return;
     };
     let texts: Vec<String> = d.nodes.iter().map(|n| n.text.clone()).collect();
@@ -24,7 +24,7 @@ pub(super) fn smartart(app: &mut SlideApp, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.add_space(16.0 * node.level as f32);
             ui.label("•");
-            let te = egui::TextEdit::singleline(draft).id(id).hint_text("Diagram text").desired_width(f32::INFINITY);
+            let te = egui::TextEdit::singleline(draft).id(id).hint_text(crate::familai_it::tr("Diagram text")).desired_width(f32::INFINITY);
             let r = ui.add(te);
             if app.ui.smartart_focus == Some(i) {
                 r.request_focus();
@@ -55,10 +55,10 @@ pub(super) fn smartart(app: &mut SlideApp, ui: &mut Ui) {
     }
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        if ui.button("+ Add").clicked() {
+        if ui.button(crate::familai_it::tr("+ Add")).clicked() {
             action = Some(("smartArt.addNode", json!({"index": app.ui.smartart_row.min(d.nodes.len().saturating_sub(1)), "position": "after"})));
         }
-        if ui.button("Remove").clicked() && !d.nodes.is_empty() {
+        if ui.button(crate::familai_it::tr("Remove")).clicked() && !d.nodes.is_empty() {
             action = Some(("smartArt.removeNode", json!({"index": app.ui.smartart_row.min(d.nodes.len() - 1)})));
         }
     });

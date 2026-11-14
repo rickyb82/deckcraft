@@ -152,17 +152,17 @@ pub(super) fn animation(app: &mut SlideApp, ui: &mut Ui) {
                 }
             }
             ui.separator();
-            if ui.button("Move Up").clicked() {
+            if ui.button(crate::familai_it::tr("Move Up")).clicked() {
                 ui.data_mut(|m| m.remove::<usize>(pick_id));
                 run(app, "animation.move", json!({"index": i, "to": i.saturating_sub(1)}));
                 ui.close();
             }
-            if ui.button("Move Down").clicked() {
+            if ui.button(crate::familai_it::tr("Move Down")).clicked() {
                 ui.data_mut(|m| m.remove::<usize>(pick_id));
                 run(app, "animation.move", json!({"index": i, "to": i + 1}));
                 ui.close();
             }
-            if ui.button("Remove").clicked() {
+            if ui.button(crate::familai_it::tr("Remove")).clicked() {
                 ui.data_mut(|m| m.remove::<usize>(pick_id));
                 run(app, "animation.remove", json!({"index": i}));
                 ui.close();

@@ -33,15 +33,15 @@ pub(super) fn view(app: &mut SlideApp, ui: &mut Ui) {
     group(ui, |ui| {
         rows(ui, |ui| {
             let mut r = app.ui.ruler;
-            if ui.checkbox(&mut r, "Ruler").changed() {
+            if ui.checkbox(&mut r, crate::familai_it::tr("Ruler")).changed() {
                 app.ui.ruler = r;
             }
             let mut g = app.ui.gridlines;
-            if ui.checkbox(&mut g, "Gridlines").changed() {
+            if ui.checkbox(&mut g, crate::familai_it::tr("Gridlines")).changed() {
                 app.ui.gridlines = g;
             }
             let mut gd = app.ui.guides;
-            if ui.checkbox(&mut gd, "Guides").changed() {
+            if ui.checkbox(&mut gd, crate::familai_it::tr("Guides")).changed() {
                 app.ui.guides = gd;
             }
         });
@@ -66,7 +66,7 @@ pub(super) fn view(app: &mut SlideApp, ui: &mut Ui) {
                         ui.close();
                     }
                 }
-                if ui.button("Fit").clicked() {
+                if ui.button(crate::familai_it::tr("Fit")).clicked() {
                     let _ = app.run("view.fit", json!({}));
                     ui.close();
                 }
@@ -80,7 +80,7 @@ pub(super) fn view(app: &mut SlideApp, ui: &mut Ui) {
         let has = app.session.active().is_some();
         let on = app.doc_window.is_some();
         let resp = big_button_ex(ui, Icon::NewWindow, "New\nWindow", has, false, on).0;
-        if resp.on_hover_text("Open another window on this presentation").clicked() {
+        if resp.on_hover_text(crate::familai_it::tr("Open another window on this presentation")).clicked() {
             let _ = app.run("view.newWindow", json!({}));
         }
     });
@@ -140,7 +140,7 @@ pub(super) fn zoom_menu(app: &mut SlideApp, ui: &mut Ui) {
     });
     ui.data_mut(|d| d.insert_temp(id, (kind, picked.clone())));
     ui.separator();
-    if ui.add_enabled(!picked.is_empty(), egui::Button::new("Insert")).clicked() {
+    if ui.add_enabled(!picked.is_empty(), egui::Button::new(crate::familai_it::tr("Insert"))).clicked() {
         let mut v = picked.clone();
         v.sort_unstable();
         let p = match kind {

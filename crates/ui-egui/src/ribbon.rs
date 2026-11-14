@@ -121,7 +121,7 @@ fn contextual(app: &SlideApp) -> Vec<&'static str> {
 const DIAGRAM_TAB_ID: &str = "SmartArt Design";
 
 fn tab_label(id: &str) -> &str {
-    if id == DIAGRAM_TAB_ID { "Diagram Design" } else { id }
+    crate::familai_it::tr(if id == DIAGRAM_TAB_ID { "Diagram Design" } else { id })
 }
 
 const TABS: [&str; 10] = ["Home", "Insert", "Draw", "Design", "Transitions", "Animations", "Slide Show", "Record", "Review", "View"];
@@ -336,6 +336,7 @@ fn toggle(app: &mut SlideApp, ui: &mut Ui, icon: Icon, label: &str, id: &str, on
 }
 
 fn tip(id: &str, label: &str) -> String {
+    let label = crate::familai_it::tr(label);
     let sc = deckcraft_engine::find_command(id).and_then(|c| c.shortcut).or_else(|| crate::UI_COMMANDS.iter().find(|c| c.0 == id).and_then(|c| c.2));
     match sc {
         Some(s) => format!("{label} ({})", pretty_shortcut(s)),

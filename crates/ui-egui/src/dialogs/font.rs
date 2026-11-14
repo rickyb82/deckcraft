@@ -67,7 +67,7 @@ pub(super) fn font_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bo
         ui.add_sized(vec2(88.0, 20.0), egui::Label::new("Baseline"));
         choice(ui, d, "font_dialog_baseline", "Baseline", "baseline", &[("none", "None"), ("super", "Superscript"), ("sub", "Subscript")]);
         ui.add_space(8.0);
-        ui.label("Caps");
+        ui.label(crate::familai_it::tr("Caps"));
         choice(ui, d, "font_dialog_caps", "Caps", "caps", &[("none", "None"), ("small", "Small caps"), ("all", "All caps")]);
     });
     ui.horizontal(|ui| {
@@ -125,15 +125,15 @@ pub(super) fn font_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bo
         let family = d.get("family", "");
         let family = family.trim();
         if family.is_empty() {
-            app.set_status("Choose a font");
+            app.set_status(crate::familai_it::tr("Choose a font"));
             return false;
         }
         let Some(size) = finite_pt(&d.get("size", "")) else {
-            app.set_status("Font size must be a number");
+            app.set_status(crate::familai_it::tr("Font size must be a number"));
             return false;
         };
         let Some(spacing) = finite_pt(&d.get("spacing", "0")) else {
-            app.set_status("Character spacing must be a number");
+            app.set_status(crate::familai_it::tr("Character spacing must be a number"));
             return false;
         };
         let mut params = json!({

@@ -143,7 +143,7 @@ fn recent_list(app: &mut SlideApp, ui: &mut Ui, query: &str, limit: usize) {
             ui.painter().rect_filled(x.rect, CornerRadius::same(3), t.hover);
         }
         icons::paint(ui.painter(), Rect::from_center_size(x.rect.center(), vec2(14.0, 14.0)), Icon::Close, t.text_dim, false);
-        if x.on_hover_text("Remove from Recent").clicked() {
+        if x.on_hover_text(crate::familai_it::tr("Remove from Recent")).clicked() {
             app.forget_recent(&path);
         }
         if resp.clicked() {
@@ -289,15 +289,18 @@ pub(super) fn open_page(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
         ui.vertical(|ui| {
             ui.set_width(230.0);
             place_row(ui, Icon::Recent, "Recent", true, 220.0);
-            if place_row(ui, Icon::OpenFolder, "Browse", false, 220.0).on_hover_text("Open a presentation from a folder (Ctrl+O)").clicked() {
+            if place_row(ui, Icon::OpenFolder, "Browse", false, 220.0)
+                .on_hover_text(crate::familai_it::tr("Open a presentation from a folder (Ctrl+O)"))
+                .clicked()
+            {
                 let _ = app.run("app.openDialog", json!({}));
             }
             if app.session.recovery_dir.is_some() {
                 ui.add_space(24.0);
-                if ui.button("Recover Unsaved Presentations").clicked() {
+                if ui.button(crate::familai_it::tr("Recover Unsaved Presentations")).clicked() {
                     match app.run("file.recovery.open", json!({})) {
                         Ok(v) if v.get("opened").and_then(Value::as_array).is_some_and(|a| a.is_empty()) => {
-                            app.set_status("There are no unsaved presentations to recover");
+                            app.set_status(crate::familai_it::tr("There are no unsaved presentations to recover"));
                         }
                         _ => {}
                     }
