@@ -171,19 +171,6 @@ impl El {
         write_el(self, &mut s, 0);
         s
     }
-    /// Remove descendant elements with any of these local names (bounded).
-    pub fn remove_all(&mut self, locals: &[&str]) {
-        fn rec(e: &mut El, locals: &[&str], depth: usize) {
-            if depth > MAX_DEPTH {
-                return;
-            }
-            e.children.retain(|c| !matches!(c, Node::El(x) if locals.contains(&x.local())));
-            for c in e.elements_mut() {
-                rec(c, locals, depth + 1);
-            }
-        }
-        rec(self, locals, 0)
-    }
 }
 
 fn write_el(e: &El, s: &mut String, depth: usize) {
@@ -282,13 +269,13 @@ pub fn parse(bytes: &[u8]) -> Result<Doc, PptxError> {
             Event::Text(t) => {
                 if let Some(p) = stack.last_mut() {
                     let s = t.decode().map(|c| c.into_owned()).unwrap_or_default();
-                    push_text(p, &s);
+                    push_text(p, &line_ends(s));
                 }
             }
             Event::CData(t) => {
                 if let Some(p) = stack.last_mut() {
                     let s = String::from_utf8_lossy(&t).into_owned();
-                    push_text(p, &s);
+                    push_text(p, &line_ends(s));
                 }
             }
             Event::GeneralRef(r) => {
@@ -324,6 +311,12 @@ pub fn parse(bytes: &[u8]) -> Result<Doc, PptxError> {
     Ok(Doc { root })
 }
 
+/// XML 1.0 §2.11: a literal CR LF or lone CR in the document reads as LF. A `&#13;` reference is
+/// not literal and reaches `push_text` through `GeneralRef`, so it stays a CR.
+fn line_ends(s: String) -> String {
+    if s.contains('\r') { s.replace("\r\n", "\n").replace('\r', "\n") } else { s }
+}
+
 fn push_text(p: &mut El, s: &str) {
     if s.is_empty() {
         return;
@@ -341,7 +334,7 @@ fn start_el(b: &quick_xml::events::BytesStart, reader: &quick_xml::Reader<&[u8]>
     for a in b.attributes().with_checks(false).flatten() {
         let k = String::from_utf8_lossy(a.key.as_ref()).into_owned();
         let v = a
-            .decoded_and_normalized_value(quick_xml::XmlVersion::Explicit1_0, reader.decoder())
+            .decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, reader.decoder())
             .map(|c| c.into_owned())
             .unwrap_or_else(|_| String::from_utf8_lossy(&a.value).into_owned());
         attrs.push((k, v));
@@ -361,44 +354,8 @@ fn decode_utf16(bytes: &[u8]) -> String {
     }
 }
 
-/// Is `c` allowed in XML 1.0 text?
-fn xml_char(c: char) -> bool {
-    matches!(c, '\t' | '\n' | '\r') || (c >= ' ' && c != '\u{FFFE}' && c != '\u{FFFF}')
-}
-
-/// Escape text content (and drop characters XML 1.0 forbids).
-pub fn esc(s: &str) -> String {
-    let mut o = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => o.push_str("&amp;"),
-            '<' => o.push_str("&lt;"),
-            '>' => o.push_str("&gt;"),
-            c if xml_char(c) => o.push(c),
-            _ => {}
-        }
-    }
-    o
-}
-
-/// Escape an attribute value.
-pub fn esc_attr(s: &str) -> String {
-    let mut o = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => o.push_str("&amp;"),
-            '<' => o.push_str("&lt;"),
-            '>' => o.push_str("&gt;"),
-            '"' => o.push_str("&quot;"),
-            '\n' => o.push_str("&#10;"),
-            '\r' => o.push_str("&#13;"),
-            '\t' => o.push_str("&#9;"),
-            c if xml_char(c) => o.push(c),
-            _ => {}
-        }
-    }
-    o
-}
+// Preserve the public writer helpers while sharing the XML 1.0 escaping rules.
+pub use craft_xml::{esc, esc_attr};
 
 /// A string builder for XML parts.
 #[derive(Default)]
@@ -507,6 +464,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn literal_cr_lf_and_lone_cr_read_as_lf_but_char_ref_stays() {
+        let d = parse(b"<a:p><a:t>one\r\ntwo\rthree&#13;four</a:t><a:t><![CDATA[x\r\ny]]></a:t></a:p>").expect("parse");
+        let t: Vec<String> = d.root.children_named("t").map(|t| t.text()).collect();
+        assert_eq!(t, vec!["one\ntwo\nthree\rfour".to_string(), "x\ny".to_string()]);
+    }
+
+    #[test]
+    fn cr_in_text_survives_write_read() {
+        assert_eq!(esc("a\rb"), "a&#13;b");
+        let mut w = W::default();
+        w.elt("a:t", "one\rtwo\r\nthree");
+        let d = parse(w.s.as_bytes()).expect("parse");
+        assert_eq!(d.root.text(), "one\rtwo\r\nthree");
+    }
+
+    #[test]
     fn parse_basic_and_entities() {
         let d = parse(b"<?xml version=\"1.0\"?><a:p xmlns:a=\"x\"><a:r><a:t>A &amp; B &#x41; &lt;</a:t></a:r><a:x r:id=\"rId1\" id=\"5\"/></a:p>")
             .unwrap();
@@ -530,6 +503,37 @@ mod tests {
     fn escape_drops_control_chars() {
         assert_eq!(esc("a\u{b}b<\u{0}"), "ab&lt;");
         assert_eq!(esc_attr("\"x\"\n"), "&quot;x&quot;&#10;");
+    }
+
+    #[test]
+    fn shared_escaping_preserves_xml_wire_bytes() {
+        let text = "&<>\"'\t\n\r\0\u{b}\u{fffe}\u{ffff}é😀&#13;";
+        assert_eq!(esc(text), "&amp;&lt;&gt;\"'\t\n&#13;é😀&amp;#13;");
+        assert_eq!(esc_attr(text), "&amp;&lt;&gt;&quot;'&#9;&#10;&#13;é😀&amp;#13;");
+        assert_eq!(esc(""), "");
+        assert_eq!(esc_attr(""), "");
+        for code in 0..32 {
+            let c = char::from_u32(code).unwrap();
+            let text = c.to_string();
+            match c {
+                '\t' => {
+                    assert_eq!(esc(&text), "\t");
+                    assert_eq!(esc_attr(&text), "&#9;");
+                }
+                '\n' => {
+                    assert_eq!(esc(&text), "\n");
+                    assert_eq!(esc_attr(&text), "&#10;");
+                }
+                '\r' => {
+                    assert_eq!(esc(&text), "&#13;");
+                    assert_eq!(esc_attr(&text), "&#13;");
+                }
+                _ => {
+                    assert_eq!(esc(&text), "");
+                    assert_eq!(esc_attr(&text), "");
+                }
+            }
+        }
     }
 
     #[test]

@@ -1,11 +1,14 @@
 //! Where MCP tool calls end up: a control-channel method call.
 
-use std::io::{BufRead, BufReader, Write};
-use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs};
-use std::path::Path;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
 use serde_json::{Value, json};
+
+// Includes the newline, matching the control server's request budget. In particular a peer
+// must not be able to grow a reply indefinitely by withholding its newline.
+const MAX_REPLY_BYTES: u64 = 16 * 1024 * 1024;
 
 /// Something that answers control-channel methods (`engine.execute`, `document.inspect`,
 /// `ui.pointer`, `ui.render`, …). See `deckcraft_ui_egui::control` for the full list.
@@ -14,80 +17,22 @@ pub trait Backend {
     fn call(&mut self, method: &str, params: Value) -> Result<Value, String>;
     /// True when a real UI is attached (`ui.screenshot`, `ui.click`, dialogs… work).
     fn has_ui(&self) -> bool;
-    /// Short human description ("headless", "connected to 127.0.0.1:7990").
+    /// Short human description ("headless", "connected to 127.0.0.1:7979").
     fn describe(&self) -> String;
 }
-
-/// Looks up the control key for an address (`HOST:PORT`).
-type KeyFinder = Box<dyn Fn(&str) -> Result<String, String> + Send>;
 
 /// A running DeckCraft app, reached through its loopback control port.
 pub struct Remote {
     addr: String,
     conn: Option<(BufReader<TcpStream>, TcpStream)>,
     next_id: u64,
-    /// The connection leads to a loopback address: requests carry the control key.
-    send_key: bool,
-    /// The control key, looked up once per connection (the app picks a new one at every start).
-    key: Option<String>,
-    find_key: KeyFinder,
-}
-
-/// The control key: `env` (`DECKCRAFT_CONTROL_KEY`) when set, else the app's key file for
-/// `port` in `settings`. The error says where it looked.
-fn lookup_key(env: Option<String>, settings: Option<&Path>, port: Option<u16>) -> Result<String, String> {
-    if let Some(k) = env.map(|k| k.trim().to_string()).filter(|k| !k.is_empty()) {
-        return Ok(k);
-    }
-    let (Some(settings), Some(port)) = (settings, port) else {
-        return Err("no control key: set DECKCRAFT_CONTROL_KEY (no settings folder or port to find the key file)".to_string());
-    };
-    let path = deckcraft_control_key::key_path(settings, port);
-    match std::fs::read_to_string(&path).map(|k| k.trim().to_string()) {
-        Ok(k) if !k.is_empty() => Ok(k),
-        _ => Err(format!("no control key: set DECKCRAFT_CONTROL_KEY, or start the app with --control {port} (it writes {})", path.display())),
-    }
-}
-
-/// The key for the app at `addr`, from the environment or the app's key file.
-fn find_key(addr: &str) -> Result<String, String> {
-    let port = addr.rsplit_once(':').and_then(|(_, p)| p.parse().ok());
-    lookup_key(std::env::var("DECKCRAFT_CONTROL_KEY").ok(), deckcraft_control_key::settings_dir().as_deref(), port)
-}
-
-/// Whether `addr` (`HOST:PORT`, as given to `--connect`) names a loopback address: 127.0.0.0/8,
-/// ::1 or `localhost`. Other host names are not resolved: they never count.
-fn is_loopback_addr(addr: &str) -> bool {
-    let loopback = |ip: IpAddr| ip.to_canonical().is_loopback();
-    if let Ok(sa) = addr.parse::<SocketAddr>() {
-        return loopback(sa.ip());
-    }
-    if let Ok(ip) = addr.parse::<IpAddr>() {
-        return loopback(ip);
-    }
-    let host = addr.rsplit_once(':').map_or(addr, |(h, _)| h);
-    let host = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')).unwrap_or(host);
-    host.parse::<IpAddr>().map_or_else(|_| host.eq_ignore_ascii_case("localhost"), loopback)
-}
-
-/// The key goes only to a loopback `--connect` address, and only when the connection really
-/// leads to one (`peer`, so a `localhost` that resolves elsewhere gets no key either).
-fn may_send_key(addr: &str, peer: Option<SocketAddr>) -> bool {
-    is_loopback_addr(addr) && peer.is_some_and(|p| p.ip().to_canonical().is_loopback())
 }
 
 impl Remote {
-    /// Connect to `addr` (`127.0.0.1:7990`), failing fast when nothing is listening.
+    /// Connect to `addr` (`127.0.0.1:7979`), failing fast when nothing is listening.
     pub fn connect(addr: &str) -> std::io::Result<Self> {
-        Self::connect_with(addr, Box::new(find_key))
-    }
-
-    pub(crate) fn connect_with(addr: &str, find_key: KeyFinder) -> std::io::Result<Self> {
-        let mut r = Self { addr: addr.to_string(), conn: None, next_id: 1, send_key: false, key: None, find_key };
+        let mut r = Self { addr: addr.to_string(), conn: None, next_id: 1 };
         r.reconnect()?;
-        if let Some(w) = r.key_warning() {
-            log::warn!("{w}");
-        }
         Ok(r)
     }
 
@@ -95,19 +40,8 @@ impl Remote {
         &self.addr
     }
 
-    /// Why requests go without the control key (the address is not loopback), if they do.
-    pub fn key_warning(&self) -> Option<String> {
-        (!self.send_key).then(|| {
-            format!(
-                "{} is not a loopback address, so the control key is not sent (it only goes to 127.0.0.0/8, ::1 and localhost) and the app refuses requests; reach the app through 127.0.0.1, for example with an SSH tunnel",
-                self.addr
-            )
-        })
-    }
-
     fn reconnect(&mut self) -> std::io::Result<()> {
         self.conn = None;
-        self.key = None;
         let mut last = std::io::Error::new(std::io::ErrorKind::NotFound, format!("cannot resolve {}", self.addr));
         for sa in self.addr.to_socket_addrs()? {
             match TcpStream::connect_timeout(&sa, Duration::from_millis(800)) {
@@ -115,7 +49,6 @@ impl Remote {
                     s.set_nodelay(true).ok();
                     // The app answers within 60 s (its own timeout); leave headroom.
                     s.set_read_timeout(Some(Duration::from_secs(90))).ok();
-                    self.send_key = may_send_key(&self.addr, s.peer_addr().ok());
                     let read = s.try_clone()?;
                     self.conn = Some((BufReader::new(read), s));
                     return Ok(());
@@ -126,92 +59,84 @@ impl Remote {
         Err(last)
     }
 
-    /// The request line; it carries the key when this connection may (looked up once per
-    /// connection).
-    fn request_line(&mut self, id: u64, method: &str, params: &Value) -> Result<String, String> {
-        let mut req = json!({"id": id, "method": method, "params": params});
-        if self.send_key {
-            let key = match &self.key {
-                Some(k) => k.clone(),
-                None => (self.find_key)(&self.addr)?,
-            };
-            req["key"] = json!(key);
-            self.key = Some(key);
+    /// Write one request line. A failure here means the app never got a complete line, so retrying is safe.
+    /// A connection the app has already closed (it restarted since the last call) is replaced before writing.
+    fn send(&mut self, line: &str) -> std::io::Result<()> {
+        if self.conn.as_ref().is_none_or(|(reader, writer)| !reader.buffer().is_empty() || is_closed(writer)) {
+            self.reconnect()?;
         }
-        Ok(req.to_string())
-    }
-
-    fn roundtrip(&mut self, line: &str) -> std::io::Result<String> {
-        let Some((reader, writer)) = self.conn.as_mut() else {
+        let Some((_, writer)) = self.conn.as_mut() else {
             return Err(std::io::Error::new(std::io::ErrorKind::NotConnected, "not connected"));
         };
-        writer.write_all(line.as_bytes())?;
-        writer.write_all(b"\n")?;
-        writer.flush()?;
-        let mut reply = String::new();
-        if reader.read_line(&mut reply)? == 0 {
-            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "control channel closed"));
-        }
-        Ok(reply)
+        writer.write_all(format!("{line}\n").as_bytes())?;
+        writer.flush()
     }
 
-    /// One request and its reply, with one retry on a new connection (the app may have
-    /// restarted; a new connection also reads the key again).
-    fn exchange(&mut self, id: u64, method: &str, params: &Value) -> Result<Value, String> {
-        let unreachable = |addr: &str, e: std::io::Error| format!("DeckCraft app at {addr} is not reachable: {e}");
-        let mut first = true;
-        let reply = loop {
-            let tried = if self.conn.is_some() { Ok(()) } else { self.reconnect() };
-            let result = match tried {
-                Ok(()) => {
-                    let line = self.request_line(id, method, params)?;
-                    self.roundtrip(&line)
-                }
-                Err(e) => Err(e),
-            };
-            match result {
-                Ok(r) => break r,
-                Err(e) => {
-                    self.conn = None;
-                    if !first {
-                        return Err(unreachable(&self.addr, e));
-                    }
-                    first = false;
-                }
-            }
+    /// Read the reply to a request that was already sent.
+    fn receive(&mut self, id: u64) -> std::io::Result<Result<Value, String>> {
+        let Some((reader, _)) = self.conn.as_mut() else {
+            return Err(std::io::Error::new(std::io::ErrorKind::NotConnected, "not connected"));
         };
-        serde_json::from_str(reply.trim()).map_err(|e| format!("bad reply from app: {e}"))
+        let mut reply = Vec::new();
+        reader.take(MAX_REPLY_BYTES + 1).read_until(b'\n', &mut reply)?;
+        if reply.len() as u64 > MAX_REPLY_BYTES {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "control reply exceeds 16 MiB"));
+        }
+        if reply.last() != Some(&b'\n') {
+            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "control reply has no terminating newline"));
+        }
+        let invalid = |message| std::io::Error::new(std::io::ErrorKind::InvalidData, message);
+        let v: Value = serde_json::from_slice(&reply).map_err(|e| invalid(format!("bad reply from app: {e}")))?;
+        if v.get("id").and_then(Value::as_u64) != Some(id) {
+            return Err(invalid("control reply has an unexpected request id".to_string()));
+        }
+        match v.get("ok").and_then(Value::as_bool) {
+            Some(true) if v.get("error").is_none() => {
+                v.get("result").cloned().map(Ok).ok_or_else(|| invalid("successful control reply has no result".to_string()))
+            }
+            Some(false) if v.get("result").is_none() => v
+                .get("error")
+                .and_then(Value::as_str)
+                .map(|error| Err(error.to_string()))
+                .ok_or_else(|| invalid("failed control reply has no error string".to_string())),
+            _ => Err(invalid("control reply has an invalid envelope".to_string())),
+        }
     }
+}
+
+/// True when the peer has closed or reset `stream`, or sent bytes nobody asked for. Between calls nothing
+/// should be waiting, so only "would block" means the connection is still good.
+fn is_closed(stream: &TcpStream) -> bool {
+    if stream.set_nonblocking(true).is_err() {
+        return true;
+    }
+    let mut byte = [0u8; 1];
+    let open = matches!(stream.peek(&mut byte), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock);
+    stream.set_nonblocking(false).is_err() || !open
 }
 
 impl Backend for Remote {
     fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
         let id = self.next_id;
         self.next_id += 1;
-        let unauthorized = |v: &Value| v.get("error").and_then(Value::as_str) == Some("unauthorized");
-        let mut v = self.exchange(id, method, &params)?;
-        if unauthorized(&v) && self.send_key {
-            // A stale key (the app restarted on this port): the app closed the connection; a new
-            // one reads the key again. Once.
+        let line = json!({"id": id, "method": method, "params": params}).to_string();
+        // One retry with a fresh connection (the app may have restarted), but only while the request
+        // was not sent. Once it is out, a lost reply leaves the outcome unknown and a resend could
+        // run an insert/delete/undo twice, so report that instead.
+        if self.send(&line).is_err() {
             self.conn = None;
-            v = self.exchange(id, method, &params)?;
+            self.send(&line).map_err(|e| {
+                self.conn = None;
+                format!("DeckCraft app at {} is not reachable: {e}", self.addr)
+            })?;
         }
-        if v.get("ok").and_then(Value::as_bool) == Some(true) {
-            Ok(v.get("result").cloned().unwrap_or(Value::Null))
-        } else if unauthorized(&v) {
+        self.receive(id).map_err(|e| {
             self.conn = None;
-            Err(self.key_warning().map_or_else(
-                || {
-                    format!(
-                        "unauthorized: the DeckCraft app at {} refused the control key (from DECKCRAFT_CONTROL_KEY or the app's key file)",
-                        self.addr
-                    )
-                },
-                |w| format!("unauthorized: {w}"),
-            ))
-        } else {
-            Err(v.get("error").and_then(Value::as_str).unwrap_or("unknown error").to_string())
-        }
+            format!(
+                "lost the reply from the DeckCraft app at {} ({e}); the command may or may not have run, check the document before retrying",
+                self.addr
+            )
+        })?
     }
 
     fn has_ui(&self) -> bool {
@@ -226,160 +151,203 @@ impl Backend for Remote {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{SocketAddr, TcpListener};
+    use std::net::TcpListener;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::mpsc::{Receiver, channel};
 
-    #[test]
-    fn key_from_env_then_key_file() {
-        let dir = std::env::temp_dir().join(format!("deckcraft-mcp-key-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = deckcraft_control_key::key_path(&dir, 7990);
-        // Neither: the error names the variable and the file it looked for.
-        let e = lookup_key(None, Some(&dir), Some(7990)).unwrap_err();
-        assert!(e.contains("DECKCRAFT_CONTROL_KEY") && e.contains(&path.display().to_string()), "{e}");
-        // The key file, trimmed; an empty variable does not count.
-        std::fs::write(&path, "  file-key\n").unwrap();
-        assert_eq!(lookup_key(None, Some(&dir), Some(7990)).unwrap(), "file-key");
-        assert_eq!(lookup_key(Some(" ".into()), Some(&dir), Some(7990)).unwrap(), "file-key");
-        // The variable wins.
-        assert_eq!(lookup_key(Some(" env-key ".into()), Some(&dir), Some(7990)).unwrap(), "env-key");
-        assert_eq!(lookup_key(Some("env-key".into()), None, None).unwrap(), "env-key");
-        // Read again every time: the app writes a new key at every start.
-        std::fs::write(&path, "new-key").unwrap();
-        assert_eq!(lookup_key(None, Some(&dir), Some(7990)).unwrap(), "new-key");
-        // Another port, another file.
-        assert!(lookup_key(None, Some(&dir), Some(7991)).is_err());
-        let _ = std::fs::remove_dir_all(&dir);
+    fn reply_once(reply: Vec<u8>) -> (Remote, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr").to_string();
+        let peer = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            stream.set_read_timeout(Some(Duration::from_secs(5))).expect("timeout");
+            stream.set_write_timeout(Some(Duration::from_secs(5))).expect("write timeout");
+            let mut line = String::new();
+            BufReader::new(&stream).read_line(&mut line).expect("request");
+            assert_eq!(serde_json::from_str::<Value>(&line).expect("JSON")["id"], 1);
+            // An oversized reply may be rejected before the peer finishes writing it.
+            let _ = stream.write_all(&reply);
+        });
+        (Remote::connect(&addr).expect("connect"), peer)
     }
 
     #[test]
-    fn key_only_for_loopback_addresses() {
-        let peer = |s: &str| s.parse::<SocketAddr>().ok();
-        for (addr, at) in [
-            ("127.0.0.1:7990", "127.0.0.1:7990"),
-            ("127.0.0.2:7990", "127.0.0.2:7990"),
-            ("[::1]:7990", "[::1]:7990"),
-            ("[::ffff:127.0.0.1]:7990", "[::ffff:127.0.0.1]:7990"),
-            ("localhost:7990", "127.0.0.1:7990"),
-            ("localhost:7990", "[::1]:7990"),
-            ("LocalHost:7990", "127.0.0.1:7990"),
-        ] {
-            assert!(may_send_key(addr, peer(at)), "{addr} at {at}");
-        }
-        for (addr, at) in [
-            ("192.0.2.20:7990", "192.0.2.20:7990"),
-            ("10.0.0.7:7990", "10.0.0.7:7990"),
-            ("[fe80::1]:7990", "[fe80::1]:7990"),
-            ("0.0.0.0:7990", "127.0.0.1:7990"),
-            // Host names other than localhost: even when they lead to this machine.
-            ("workstation:7990", "127.0.1.1:7990"),
-            ("example.org:7990", "93.184.215.14:7990"),
-            ("localhost.example.org:7990", "127.0.0.1:7990"),
-            // `localhost` that does not lead to a loopback address.
-            ("localhost:7990", "192.0.2.20:7990"),
-        ] {
-            assert!(!may_send_key(addr, peer(at)), "{addr} at {at}");
-        }
-        // No peer address: no key.
-        assert!(!may_send_key("127.0.0.1:7990", None));
+    fn wrong_reply_id_is_not_command_success() {
+        let (mut remote, peer) = reply_once(b"{\"id\":999,\"ok\":true,\"result\":\"unrelated\"}\n".to_vec());
+        let result = remote.call("engine.execute", json!({"command":"slide.new"}));
+        peer.join().expect("peer");
+        let error = result.expect_err("an unrelated reply cannot confirm a mutation");
+        assert!(error.contains("may or may not have run"), "{error}");
+        assert!(remote.conn.is_none(), "discard the invalid connection without replaying");
     }
 
-    /// A stand-in for the app on 127.0.0.1: every request line goes to the returned channel and
-    /// gets `answer(request)`: a reply and whether to close the connection after it, or `None`
-    /// to close it without a reply (the app quit).
-    fn fake_app(answer: impl Fn(&Value) -> Option<(Value, bool)> + Send + Sync + 'static) -> (u16, Receiver<Value>) {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let (tx, rx) = channel();
-        let answer = Arc::new(answer);
+    #[test]
+    fn matching_success_and_error_replies_keep_their_meaning() {
+        for (reply, expected) in [
+            ("{\"id\":1,\"ok\":true,\"result\":null}\r\n", Ok(Value::Null)),
+            ("{\"id\":1,\"ok\":true,\"result\":{\"slides\":2}}\n", Ok(json!({"slides":2}))),
+            ("{\"id\":1,\"ok\":false,\"error\":\"disabled\"}\n", Err("disabled".into())),
+        ] {
+            let (mut remote, peer) = reply_once(reply.as_bytes().to_vec());
+            assert_eq!(remote.call("engine.execute", json!({})), expected);
+            assert!(remote.conn.is_some(), "valid responses do not invalidate the connection");
+            peer.join().expect("peer");
+        }
+    }
+
+    #[test]
+    fn malformed_reply_envelopes_leave_the_outcome_unknown() {
+        for reply in [
+            "not JSON\n",
+            "[]\n",
+            "{\"ok\":true,\"result\":null}\n",
+            "{\"id\":\"1\",\"ok\":true,\"result\":null}\n",
+            "{\"id\":1,\"ok\":1,\"result\":null}\n",
+            "{\"id\":1,\"ok\":true}\n",
+            "{\"id\":1,\"ok\":false}\n",
+            "{\"id\":1,\"ok\":false,\"error\":42}\n",
+            "{\"id\":1,\"ok\":true,\"result\":null,\"error\":\"failed\"}\n",
+            "{\"id\":1,\"ok\":false,\"result\":null,\"error\":\"failed\"}\n",
+        ] {
+            let (mut remote, peer) = reply_once(reply.as_bytes().to_vec());
+            let result = remote.call("engine.execute", json!({}));
+            peer.join().expect("peer");
+            let error = result.expect_err(reply);
+            assert!(error.contains("may or may not have run"), "{reply}: {error}");
+            assert!(remote.conn.is_none(), "{reply}: discard the invalid connection");
+        }
+    }
+
+    #[test]
+    fn eof_without_a_newline_is_not_a_complete_reply() {
+        let (mut remote, peer) = reply_once(b"{\"id\":1,\"ok\":true,\"result\":null}".to_vec());
+        let result = remote.call("engine.execute", json!({}));
+        peer.join().expect("peer");
+        assert!(result.is_err(), "a truncated frame cannot confirm a mutation");
+        assert!(remote.conn.is_none());
+    }
+
+    #[test]
+    fn oversized_reply_is_rejected() {
+        let reply = format!("{{\"id\":1,\"ok\":true,\"result\":\"{}\"}}\n", "x".repeat(16 * 1024 * 1024));
+        let (mut remote, peer) = reply_once(reply.into_bytes());
+        let result = remote.call("engine.execute", json!({}));
+        let invalidated = remote.conn.is_none();
+        // Close the socket before joining: the bounded reader need not drain the peer's reply.
+        remote.conn = None;
+        peer.join().expect("peer");
+        assert!(result.is_err(), "a reply is limited to 16 MiB");
+        let error = result.expect_err("checked above");
+        assert!(error.contains("may or may not have run"), "{error}");
+        assert!(invalidated, "discard the oversized reply's connection");
+    }
+
+    #[test]
+    fn reply_at_the_size_limit_is_accepted() {
+        let prefix = "{\"id\":1,\"ok\":true,\"result\":\"";
+        let suffix = "\"}\n";
+        let payload_len = 16 * 1024 * 1024 - prefix.len() - suffix.len();
+        let reply = format!("{prefix}{}{suffix}", "x".repeat(payload_len));
+        let (mut remote, peer) = reply_once(reply.into_bytes());
+        let result = remote.call("document.inspect", json!({})).expect("reply at the limit");
+        assert_eq!(result.as_str().map(str::len), Some(payload_len));
+        peer.join().expect("peer");
+    }
+
+    #[test]
+    fn buffered_unsolicited_reply_is_discarded_before_sending() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr").to_string();
+        let peer = std::thread::spawn(move || {
+            let (mut first, _) = listener.accept().expect("first connection");
+            first.set_read_timeout(Some(Duration::from_secs(5))).expect("timeout");
+            let mut line = String::new();
+            BufReader::new(&first).read_line(&mut line).expect("initial request");
+            // Even a stale frame whose ID happens to match must not answer a new request.
+            first
+                .write_all(b"{\"id\":1,\"ok\":true,\"result\":\"first\"}\n{\"id\":2,\"ok\":true,\"result\":\"stale\"}\n")
+                .expect("two replies together");
+            line.clear();
+            let sent_on_stale = BufReader::new(&first).read_line(&mut line).expect("first request") != 0;
+            if !sent_on_stale {
+                let (mut fresh, _) = listener.accept().expect("fresh connection");
+                fresh.set_read_timeout(Some(Duration::from_secs(5))).expect("timeout");
+                BufReader::new(&fresh).read_line(&mut line).expect("fresh request");
+                fresh.write_all(b"{\"id\":2,\"ok\":false,\"error\":\"rejected\"}\n").expect("actual reply");
+            }
+            sent_on_stale
+        });
+        let mut remote = Remote::connect(&addr).expect("connect");
+        assert_eq!(remote.call("document.inspect", json!({})), Ok(json!("first")));
+        // Force the stale frame into BufReader, where a socket-only peek cannot see it.
+        assert!(!remote.conn.as_mut().expect("connection").0.fill_buf().expect("buffer").is_empty());
+        let result = remote.call("engine.execute", json!({"command":"slide.new"}));
+        let sent_on_stale = peer.join().expect("peer");
+        assert_eq!(result, Err("rejected".into()), "only the fresh peer's response counts");
+        assert!(!sent_on_stale, "replace a connection with buffered unsolicited bytes before sending");
+    }
+
+    #[test]
+    fn lost_reply_is_not_resent() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr").to_string();
+        let executed = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&executed);
         std::thread::spawn(move || {
             for stream in listener.incoming().flatten() {
-                let (tx, answer) = (tx.clone(), answer.clone());
-                std::thread::spawn(move || {
-                    let mut out = stream.try_clone().unwrap();
-                    for line in BufReader::new(stream).lines() {
-                        let Ok(req) = serde_json::from_str::<Value>(&line.unwrap_or_default()) else { return };
-                        let _ = tx.send(req.clone());
-                        let Some((mut reply, close)) = answer(&req) else { return };
-                        reply["id"] = req["id"].clone();
-                        if writeln!(out, "{reply}").is_err() || close {
-                            return;
-                        }
-                    }
-                });
+                let mut reader = BufReader::new(&stream);
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    continue;
+                }
+                let n = count.fetch_add(1, Ordering::SeqCst) + 1;
+                if n > 1 {
+                    let mut w = &stream;
+                    let _ = w.write_all(b"{\"id\":2,\"ok\":true,\"result\":null}\n");
+                }
+                // The first request is executed, then the connection drops without a reply.
             }
         });
-        (port, rx)
-    }
-
-    fn fixed_key(key: &'static str) -> KeyFinder {
-        Box::new(move |_| Ok(key.to_string()))
-    }
-
-    const WAIT: Duration = Duration::from_secs(5);
-
-    #[test]
-    fn sends_the_key_to_loopback() {
-        let (port, seen) = fake_app(|_| Some((json!({"ok": true, "result": 7}), false)));
-        for host in ["127.0.0.1", "localhost"] {
-            let mut r = Remote::connect_with(&format!("{host}:{port}"), fixed_key("k1")).unwrap();
-            assert!(r.key_warning().is_none(), "{host}");
-            assert_eq!(r.call("document.inspect", json!({})).unwrap(), json!(7));
-            assert_eq!(seen.recv_timeout(WAIT).unwrap()["key"], "k1", "{host}");
-        }
+        let mut remote = Remote::connect(&addr).expect("connect");
+        let err = remote.call("engine.execute", json!({})).expect_err("lost reply must be an error");
+        assert!(err.contains("may or may not have run"), "{err}");
+        assert_eq!(executed.load(Ordering::SeqCst), 1, "the command must not be replayed");
+        // The next call opens a fresh connection and works.
+        assert!(remote.call("document.inspect", json!({})).is_ok());
+        assert_eq!(executed.load(Ordering::SeqCst), 2);
     }
 
     #[test]
-    fn reads_the_key_again_on_a_new_connection() {
-        // The app restarted with a new key: the old key is refused (and the connection closed).
-        let (port, seen) = fake_app(|req| {
-            Some(if req["key"] == "new" { (json!({"ok": true, "result": 1}), false) } else { (json!({"ok": false, "error": "unauthorized"}), true) })
+    fn connection_closed_before_the_call_is_retried() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr").to_string();
+        let (closed_tx, closed_rx) = std::sync::mpsc::channel();
+        let executed = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&executed);
+        std::thread::spawn(move || {
+            let mut first = true;
+            for stream in listener.incoming().flatten() {
+                if first {
+                    // The app restarts: the first connection closes before any request arrives.
+                    first = false;
+                    drop(stream);
+                    let _ = closed_tx.send(());
+                    continue;
+                }
+                let mut reader = BufReader::new(&stream);
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    continue;
+                }
+                count.fetch_add(1, Ordering::SeqCst);
+                let mut w = &stream;
+                let _ = w.write_all(b"{\"id\":1,\"ok\":true,\"result\":null}\n");
+            }
         });
-        let reads = Arc::new(AtomicUsize::new(0));
-        let n = reads.clone();
-        let finder: KeyFinder = Box::new(move |_| Ok(if n.fetch_add(1, Ordering::SeqCst) == 0 { "old" } else { "new" }.to_string()));
-        let mut r = Remote::connect_with(&format!("127.0.0.1:{port}"), finder).unwrap();
-        assert_eq!(r.call("document.inspect", json!({})).unwrap(), json!(1));
-        assert_eq!(seen.recv_timeout(WAIT).unwrap()["key"], "old");
-        assert_eq!(seen.recv_timeout(WAIT).unwrap()["key"], "new");
-        assert_eq!(reads.load(Ordering::SeqCst), 2);
-        // The new key is kept for the next requests on the same connection.
-        assert_eq!(r.call("document.inspect", json!({})).unwrap(), json!(1));
-        assert_eq!(reads.load(Ordering::SeqCst), 2);
-
-        // The app quits mid-session (connection closed): the retry reads the key again.
-        let (port, seen) = fake_app(|req| if req["id"] == 2 { None } else { Some((json!({"ok": true, "result": 1}), false)) });
-        let reads = Arc::new(AtomicUsize::new(0));
-        let n = reads.clone();
-        let finder: KeyFinder = Box::new(move |_| Ok(format!("key-{}", n.fetch_add(1, Ordering::SeqCst))));
-        let mut r = Remote::connect_with(&format!("127.0.0.1:{port}"), finder).unwrap();
-        r.call("document.inspect", json!({})).unwrap();
-        r.call("document.inspect", json!({})).unwrap_err();
-        let keys: Vec<Value> = seen.try_iter().map(|v| v["key"].clone()).collect();
-        assert_eq!(keys.first(), Some(&json!("key-0")), "{keys:?}");
-        assert_eq!(keys.last(), Some(&json!("key-1")), "{keys:?}");
-    }
-
-    #[test]
-    fn no_key_for_other_hosts_and_a_clear_error() {
-        // There is no LAN address to test with here: same stand-in, with the decision a LAN
-        // address gets.
-        let (port, seen) = fake_app(|req| {
-            Some(if req.get("key").is_some() {
-                (json!({"ok": true, "result": 1}), false)
-            } else {
-                (json!({"ok": false, "error": "unauthorized"}), true)
-            })
-        });
-        let finder: KeyFinder = Box::new(|_| Err("the key must not be read for another host".to_string()));
-        let mut r = Remote::connect_with(&format!("127.0.0.1:{port}"), finder).unwrap();
-        r.send_key = false;
-        assert!(r.key_warning().is_some_and(|w| w.contains("not a loopback address")));
-        let e = r.call("document.inspect", json!({})).unwrap_err();
-        assert!(e.contains("not a loopback address") && e.contains("not sent"), "{e}");
-        assert!(seen.recv_timeout(WAIT).unwrap().get("key").is_none());
+        let mut remote = Remote::connect(&addr).expect("connect");
+        closed_rx.recv().expect("server closed the first connection");
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(remote.call("engine.execute", json!({})).is_ok(), "a request that never left must be sent on a fresh connection");
+        assert_eq!(executed.load(Ordering::SeqCst), 1);
     }
 }

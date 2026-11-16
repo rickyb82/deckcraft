@@ -1,26 +1,20 @@
 //! The folders automation may read and write.
 //!
 //! `deckcraft-cli mcp --automation-read-root <dir> --automation-write-root <dir>` confines the
-//! files an agent's commands reach (`file.open`, `file.save`, `file.export`, `insert.picture`,
-//! `insert.video`/`audio`, `picture.change`, fills from a file, the MCP server's `render` to a
-//! path…). [`AutomationRoots`] holds the two folders. While they are in force, every path a
-//! command reads goes through [`check_read`] and every path it writes through [`check_write`]
-//! (both called by [`read_file`] / [`write_file`], the only way commands reach the file system):
+//! files an agent's commands reach. [`AutomationRoots`] holds the two folders. While they are in force, every path a command
+//! reads goes through [`check_read`] and every path it writes through [`check_write`]:
 //!
 //! - The path is made absolute against the working directory, as the file system reads it. Its
 //!   links are followed: for a file that doesn't exist yet, the links of its nearest existing
 //!   folder, the rest of the path being plain names (`..` below a missing folder is refused, and so
 //!   is a link that leads nowhere).
 //! - The result must lie inside the root, compared by whole components (`/work2` isn't inside
-//!   `/work`), without regard to case on Windows.
-//! - Read and write access are separate: a root given alone grants only its own kind of access,
-//!   and with neither root nothing can be read or written by path at all (the headless MCP
-//!   server's default: presentations then travel as base64 through `file.openBytes` and
-//!   `file.saveBytes`).
+//!   `/work`), exactly: on Windows what exists is resolved to its real case first.
+//! - Read and write access are separate: a root given alone grants only its own kind of access.
 //!
 //! Roots are in force on a thread inside [`confine`], and in the whole process after
-//! [`confine_process`] (`deckcraft-cli mcp`), except inside [`unconfined`]. Outside them nothing
-//! is checked: the desktop app and the other CLI commands act for the person at the keyboard.
+//! [`confine_process`] (`deckcraft-cli mcp`), except inside [`unconfined`]. Without roots
+//! nothing is checked.
 //!
 //! A path is checked, then opened: a process that can change the folders in between (swapping in
 //! a link) can still win that race. The roots keep an agent to the files it was given; they don't
@@ -41,8 +35,8 @@ pub enum Access {
 /// The folders automation may read and write; a root left out grants no access of its kind.
 #[derive(Debug)]
 pub struct AutomationRoots {
-    read: Option<Root>,
-    write: Option<Root>,
+    read: Vec<Root>,
+    write: Vec<Root>,
 }
 
 #[derive(Debug)]
@@ -68,47 +62,53 @@ impl Root {
 }
 
 impl AutomationRoots {
-    /// The roots `read` and `write`, which must be existing folders. A root left out grants no
-    /// access of its kind; with neither, no path can be read or written.
-    pub fn new(read: Option<&Path>, write: Option<&Path>) -> Result<Arc<Self>, String> {
-        let read = read.map(|p| Root::open(p, Access::Read)).transpose()?;
-        let write = write.map(|p| Root::open(p, Access::Write)).transpose()?;
-        Ok(Arc::new(Self { read, write }))
+    /// The read and write roots, which must be existing folders; `None` when both are empty
+    /// (nothing is confined then).
+    pub fn new(read: &[PathBuf], write: &[PathBuf]) -> Result<Option<Arc<Self>>, String> {
+        if read.is_empty() && write.is_empty() {
+            return Ok(None);
+        }
+        let read = read.iter().map(|p| Root::open(p, Access::Read)).collect::<Result<_, _>>()?;
+        let write = write.iter().map(|p| Root::open(p, Access::Write)).collect::<Result<_, _>>()?;
+        Ok(Some(Arc::new(Self { read, write })))
     }
 
-    /// The read root, absolute with its links followed.
-    pub fn read_root(&self) -> Option<&Path> {
-        self.read.as_ref().map(|r| r.shown.as_path())
+    /// The read roots, absolute with their links followed.
+    pub fn read_roots(&self) -> impl Iterator<Item = &Path> {
+        self.read.iter().map(|r| r.shown.as_path())
     }
 
-    /// The write root, absolute with its links followed.
-    pub fn write_root(&self) -> Option<&Path> {
-        self.write.as_ref().map(|r| r.shown.as_path())
+    /// The write roots, absolute with their links followed.
+    pub fn write_roots(&self) -> impl Iterator<Item = &Path> {
+        self.write.iter().map(|r| r.shown.as_path())
     }
 
     /// May the file or folder at `path` be read (or written)? `Err` says why not.
     pub fn check(&self, path: &str, access: Access) -> Result<(), String> {
-        let root = match access {
-            Access::Read => self.read.as_ref(),
-            Access::Write => self.write.as_ref(),
+        self.check_path(Path::new(path), access)
+    }
+
+    /// [`Self::check`] for a path that may not be UTF-8: the checked path is the one opened.
+    pub fn check_path(&self, path: &Path, access: Access) -> Result<(), String> {
+        let path_text = path.display();
+        let roots = match access {
+            Access::Read => &self.read,
+            Access::Write => &self.write,
         };
-        let Some(Root { resolved: folder, shown }) = root else {
+        if roots.is_empty() {
             return match access {
-                Access::Read => {
-                    Err(format!("automation file access refused: no read root (start the MCP server with --automation-read-root DIR): {path}"))
-                }
-                Access::Write => {
-                    Err(format!("automation file access refused: no write root (start the MCP server with --automation-write-root DIR): {path}"))
-                }
+                Access::Read => Err(format!("automation filesystem access is not granted: read authority is absent: {path_text}")),
+                Access::Write => Err(format!("automation filesystem access is not granted: write authority is absent: {path_text}")),
             };
-        };
-        if inside(&resolve(path)?, folder) {
+        }
+        let resolved = resolve(path)?;
+        if roots.iter().any(|root| inside(&resolved, &root.resolved)) {
             return Ok(());
         }
-        let root = shown.display();
+        let roots = roots.iter().map(|root| root.shown.display().to_string()).collect::<Vec<_>>().join(", ");
         match access {
-            Access::Read => Err(format!("automation path rejected: outside the read root {root}: {path}")),
-            Access::Write => Err(format!("automation path rejected: outside the write root {root}: {path}")),
+            Access::Read => Err(format!("automation path rejected: outside the read roots {roots}: {path_text}")),
+            Access::Write => Err(format!("automation path rejected: outside the write roots {roots}: {path_text}")),
         }
     }
 }
@@ -157,7 +157,8 @@ pub fn confine<T>(roots: Option<&Arc<AutomationRoots>>, f: impl FnOnce() -> T) -
     }
 }
 
-/// Run `f` with no roots in force on this thread: what the person at the keyboard does.
+/// Run `f` with no roots in force on this thread: what the person at the keyboard does, and the
+/// app's own folders.
 pub fn unconfined<T>(f: impl FnOnce() -> T) -> T {
     with_scope(Some(Scope::Unconfined), f)
 }
@@ -196,43 +197,23 @@ pub fn check_write(path: &str) -> Result<(), String> {
     current().map_or(Ok(()), |r| r.check(path, Access::Write))
 }
 
-/// Read the file at `path` for a command: held to the read root when one is in force.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn read_file(path: &str) -> crate::Result<Vec<u8>> {
-    check_read(path).map_err(crate::EngineError::Other)?;
-    std::fs::read(path).map_err(|e| crate::EngineError::Other(format!("{path}: {e}")))
-}
-#[cfg(target_arch = "wasm32")]
-pub fn read_file(path: &str) -> crate::Result<Vec<u8>> {
-    Err(crate::EngineError::Other(format!("{path}: no file system in the browser")))
-}
-
-/// Write `bytes` to `path` for a command: to a temporary sibling, then renamed, so a failed save
-/// never truncates the old file. Held to the write root when one is in force: the file and its
-/// temporary sibling (for `path` naming the root itself, the sibling would land beside the root).
-#[cfg(not(target_arch = "wasm32"))]
-pub fn write_file(path: &str, bytes: &[u8]) -> crate::Result<()> {
-    let tmp = format!("{path}.saving");
-    check_write(path).and_then(|()| check_write(&tmp)).map_err(crate::EngineError::Other)?;
-    std::fs::write(&tmp, bytes).map_err(|e| crate::EngineError::Other(format!("{path}: {e}")))?;
-    std::fs::rename(&tmp, path).map_err(|e| crate::EngineError::Other(format!("{path}: {e}")))
-}
-#[cfg(target_arch = "wasm32")]
-pub fn write_file(_path: &str, _bytes: &[u8]) -> crate::Result<()> {
-    Err(crate::EngineError::Other("saving to a path is not available in the browser".into()))
+/// May `path` be written here? Always, without roots in force. For a path that may not be UTF-8.
+pub fn check_write_path(path: &Path) -> Result<(), String> {
+    current().map_or(Ok(()), |r| r.check_path(path, Access::Write))
 }
 
 /// `path` made absolute with its links followed; for a path that doesn't exist (yet), its nearest
 /// existing folder's links followed and the rest appended.
-fn resolve(path: &str) -> Result<PathBuf, String> {
-    if path.is_empty() {
+fn resolve(path: &Path) -> Result<PathBuf, String> {
+    if path.as_os_str().is_empty() {
         return Err("automation path rejected: path is empty".into());
     }
+    let shown = path.display();
     // Checked as given: making `…\NUL` absolute gives the device path `\\.\NUL` on Windows.
-    if cfg!(windows) && Path::new(path).components().any(|c| matches!(c, Component::Normal(n) if is_device_name(&n.to_string_lossy()))) {
-        return Err(format!("automation path rejected: reserved device names are not allowed: {path}"));
+    if cfg!(windows) && path.components().any(|c| matches!(c, Component::Normal(n) if is_device_name(&n.to_string_lossy()))) {
+        return Err(format!("automation path rejected: reserved device names are not allowed: {shown}"));
     }
-    let absolute = std::path::absolute(path).map_err(|e| format!("automation path rejected: cannot resolve {path}: {e}"))?;
+    let absolute = std::path::absolute(path).map_err(|e| format!("automation path rejected: cannot resolve {shown}: {e}"))?;
     // The names below the nearest existing folder, last first.
     let mut missing: Vec<OsString> = vec![];
     let mut at = absolute.as_path();
@@ -243,11 +224,11 @@ fn resolve(path: &str) -> Result<PathBuf, String> {
                 return Ok(found);
             }
             Err(e) => match std::fs::symlink_metadata(at) {
-                Ok(m) if m.file_type().is_symlink() => return Err(format!("automation path rejected: a link that leads nowhere: {path}")),
+                Ok(m) if m.file_type().is_symlink() => return Err(format!("automation path rejected: a link that leads nowhere: {shown}")),
                 // There, yet its real path can't be had (no permission): nothing to compare.
-                Ok(_) => return Err(format!("automation path rejected: cannot resolve {path}: {e}")),
+                Ok(_) => return Err(format!("automation path rejected: cannot resolve {shown}: {e}")),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(format!("automation path rejected: cannot resolve {path}: {e}")),
+                Err(e) => return Err(format!("automation path rejected: cannot resolve {shown}: {e}")),
             },
         }
         let parent = at.parent();
@@ -257,58 +238,47 @@ fn resolve(path: &str) -> Result<PathBuf, String> {
                 at = parent;
             }
             (Some(Component::ParentDir), _) => {
-                return Err(format!("automation path rejected: parent traversal below a folder that doesn't exist: {path}"));
+                return Err(format!("automation path rejected: parent traversal below a folder that doesn't exist: {shown}"));
             }
             // Down to the root (or drive) and it doesn't exist either.
             _ => {
                 let e = std::io::Error::from(std::io::ErrorKind::NotFound);
-                return Err(format!("automation path rejected: cannot resolve {path}: {e}"));
+                return Err(format!("automation path rejected: cannot resolve {shown}: {e}"));
             }
         }
     }
 }
 
-/// Is `path` (resolved) `root` or inside it, component by component (without regard to case on
-/// Windows, whose file systems ignore it)?
+/// Is `path` (resolved) `root` or inside it, component by component? Exactly, on Windows too: what
+/// exists has its real case from [`resolve`], and a folder that doesn't exist yet may be a different
+/// one from the root where a parent folder is case sensitive.
 fn inside(path: &Path, root: &Path) -> bool {
     let mut path = path.components();
-    root.components().all(|r| path.next().is_some_and(|p| same_component(p, r)))
+    root.components().all(|r| path.next() == Some(r))
 }
 
-fn same_component(a: Component, b: Component) -> bool {
-    if a == b {
-        return true;
-    }
-    if !cfg!(windows) {
-        return false;
-    }
-    match (a.as_os_str().to_str(), b.as_os_str().to_str()) {
-        (Some(a), Some(b)) => a.to_lowercase() == b.to_lowercase(),
-        _ => false,
-    }
-}
-
-/// A Windows device name (`CON`, `NUL`, `COM1`… also with an extension), which names no file.
+/// A Windows device name (`CON`, `NUL`, `COM1`, `COM¹`… also with an extension or a colon), which names no file.
 fn is_device_name(component: &str) -> bool {
-    let stem = component.split('.').next().unwrap_or(component).trim_end_matches(' ').to_ascii_uppercase();
-    let numbered = |prefix: &str| stem.strip_prefix(prefix).is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"));
+    let stem = component.split(['.', ':']).next().unwrap_or(component).trim_end_matches(' ').to_ascii_uppercase();
+    let numbered =
+        |prefix: &str| stem.strip_prefix(prefix).is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"));
     matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CLOCK$" | "CONIN$" | "CONOUT$") || numbered("COM") || numbered("LPT")
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
 
     /// A fresh folder holding `in` (read root), `out` (write root) and `outside`.
-    pub(crate) fn folders(name: &str) -> (PathBuf, Arc<AutomationRoots>) {
+    fn folders(name: &str) -> (PathBuf, Arc<AutomationRoots>) {
         let base = std::env::temp_dir().join(format!("dc-file-access-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         for d in ["in/sub", "out", "outside", "in2"] {
             std::fs::create_dir_all(base.join(d)).unwrap();
         }
-        std::fs::write(base.join("in/a.pptx"), "x").unwrap();
-        std::fs::write(base.join("outside/secret.pptx"), "x").unwrap();
-        let roots = AutomationRoots::new(Some(&base.join("in")), Some(&base.join("out"))).unwrap();
+        std::fs::write(base.join("in/a.deckcraft"), "x").unwrap();
+        std::fs::write(base.join("outside/secret.deckcraft"), "x").unwrap();
+        let roots = AutomationRoots::new(&[base.join("in")], &[base.join("out")]).unwrap().unwrap();
         (base, roots)
     }
 
@@ -316,44 +286,39 @@ pub(crate) mod tests {
         p.to_string_lossy().into_owned()
     }
 
-    /// A symbolic link at `link` to `target`; `false` where links can't be made (Windows without
-    /// Developer Mode).
-    #[cfg(unix)]
-    pub(crate) fn link(target: &Path, link: &Path) -> bool {
-        std::os::unix::fs::symlink(target, link).is_ok()
-    }
-    #[cfg(windows)]
-    pub(crate) fn link(target: &Path, link: &Path) -> bool {
-        if target.is_dir() { std::os::windows::fs::symlink_dir(target, link) } else { std::os::windows::fs::symlink_file(target, link) }.is_ok()
-    }
-    #[cfg(not(any(unix, windows)))]
-    pub(crate) fn link(_: &Path, _: &Path) -> bool {
-        false
-    }
-
     #[test]
     fn paths_inside_the_roots_pass_and_others_dont() {
         let (base, roots) = folders("inside");
-        assert_eq!(roots.check(&s(base.join("in/a.pptx")), Access::Read), Ok(()));
+        assert_eq!(roots.check(&s(base.join("in/a.deckcraft")), Access::Read), Ok(()));
         assert_eq!(roots.check(&s(base.join("in")), Access::Read), Ok(()), "the root itself");
-        assert_eq!(roots.check(&s(base.join("in/sub/new.pptx")), Access::Read), Ok(()), "missing files are checked by their folder");
+        assert_eq!(roots.check(&s(base.join("in/sub/new.deckcraft")), Access::Read), Ok(()), "missing files are checked by their folder");
         assert_eq!(roots.check(&s(base.join("out/new/deeper/x.png")), Access::Write), Ok(()), "and by their nearest folder");
-        let e = roots.check(&s(base.join("outside/secret.pptx")), Access::Read).unwrap_err();
+        let e = roots.check(&s(base.join("outside/secret.deckcraft")), Access::Read).unwrap_err();
         assert!(e.starts_with("automation path rejected: outside the read root"), "{e}");
         // Read and write access are separate.
-        let e = roots.check(&s(base.join("in/a.pptx")), Access::Write).unwrap_err();
+        let e = roots.check(&s(base.join("in/a.deckcraft")), Access::Write).unwrap_err();
         assert!(e.contains("outside the write root"), "{e}");
         assert!(roots.check(&s(base.join("out/x.png")), Access::Read).unwrap_err().contains("outside the read root"));
-        assert!(roots.check("/etc/passwd", Access::Read).unwrap_err().contains("outside the read root"), "an absolute path elsewhere");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn any_configured_root_grants_access() {
+        let (base, _) = folders("multiple");
+        let roots = AutomationRoots::new(&[base.join("in"), base.join("in2")], &[base.join("out"), base.join("outside")]).unwrap().unwrap();
+        assert_eq!(roots.check(&s(base.join("in/a.deckcraft")), Access::Read), Ok(()));
+        assert_eq!(roots.check(&s(base.join("in2/b.deckcraft")), Access::Read), Ok(()));
+        assert_eq!(roots.check(&s(base.join("out/new.deckcraft")), Access::Write), Ok(()));
+        assert_eq!(roots.check(&s(base.join("outside/new.deckcraft")), Access::Write), Ok(()));
         let _ = std::fs::remove_dir_all(base);
     }
 
     #[test]
     fn a_sibling_with_the_same_prefix_is_outside() {
         let (base, roots) = folders("prefix");
-        std::fs::write(base.join("in2/b.pptx"), "x").unwrap();
-        assert!(roots.check(&s(base.join("in2/b.pptx")), Access::Read).is_err(), "in2 is not inside in");
-        assert!(roots.check(&format!("{}2/c.pptx", s(base.join("in"))), Access::Read).is_err());
+        std::fs::write(base.join("in2/b.deckcraft"), "x").unwrap();
+        assert!(roots.check(&s(base.join("in2/b.deckcraft")), Access::Read).is_err(), "in2 is not inside in");
+        assert!(roots.check(&format!("{}2/c.deckcraft", s(base.join("in"))), Access::Read).is_err());
         let _ = std::fs::remove_dir_all(base);
     }
 
@@ -361,11 +326,11 @@ pub(crate) mod tests {
     fn parent_traversal_is_resolved_or_refused() {
         let (base, roots) = folders("dotdot");
         let sep = std::path::MAIN_SEPARATOR;
-        let up = format!("{}{sep}..{sep}outside{sep}secret.pptx", s(base.join("in")));
+        let up = format!("{}{sep}..{sep}outside{sep}secret.deckcraft", s(base.join("in")));
         assert!(roots.check(&up, Access::Read).unwrap_err().contains("outside the read root"), "`..` out of the root");
-        let back = format!("{}{sep}..{sep}a.pptx", s(base.join("in/sub")));
+        let back = format!("{}{sep}..{sep}a.deckcraft", s(base.join("in/sub")));
         assert_eq!(roots.check(&back, Access::Read), Ok(()), "`..` that stays inside");
-        let missing = format!("{}{sep}nope{sep}..{sep}..{sep}outside{sep}x.pptx", s(base.join("out")));
+        let missing = format!("{}{sep}nope{sep}..{sep}..{sep}outside{sep}x.deckcraft", s(base.join("out")));
         let e = roots.check(&missing, Access::Write).unwrap_err();
         // Windows resolves `..` by name first (so does opening the file there): then it's outside.
         assert!(e.contains("parent traversal below a folder that doesn't exist") || e.contains("outside the write root"), "{e}");
@@ -376,74 +341,133 @@ pub(crate) mod tests {
     fn relative_paths_resolve_against_the_working_directory() {
         let (base, roots) = folders("relative");
         // The tests' working directory is the crate's folder: not inside the roots.
-        assert!(roots.check("a.pptx", Access::Read).unwrap_err().contains("outside the read root"));
-        assert!(roots.check("../../../../../../../../etc/passwd", Access::Read).unwrap_err().contains("outside the read root"));
+        assert!(roots.check("a.deckcraft", Access::Read).unwrap_err().contains("outside the read root"));
         assert!(roots.check("", Access::Read).unwrap_err().contains("path is empty"));
         let _ = std::fs::remove_dir_all(base);
     }
 
     #[test]
-    fn a_missing_root_is_an_error_and_none_grants_nothing() {
+    fn a_missing_root_is_an_error_and_none_is_no_confinement() {
         let (base, _) = folders("missing");
-        let e = AutomationRoots::new(Some(&base.join("nope")), None).unwrap_err();
+        let e = AutomationRoots::new(&[base.join("nope")], &[]).unwrap_err();
         assert!(e.starts_with("cannot open the automation read root"), "{e}");
-        let e = AutomationRoots::new(None, Some(&base.join("in/a.pptx"))).unwrap_err();
-        assert!(e.starts_with("cannot open the automation write root"), "{e}");
-        assert!(AutomationRoots::new(Some(Path::new("")), None).unwrap_err().starts_with("cannot open the automation read root ``"));
-        // Without roots nothing can be read or written by path.
-        let none = AutomationRoots::new(None, None).unwrap();
-        let e = none.check(&s(base.join("in/a.pptx")), Access::Read).unwrap_err();
-        assert!(e.contains("no read root") && e.contains("--automation-read-root"), "{e}");
-        let e = none.check(&s(base.join("out/x.png")), Access::Write).unwrap_err();
-        assert!(e.contains("no write root") && e.contains("--automation-write-root"), "{e}");
+        let e = AutomationRoots::new(&[], &[base.join("in/a.deckcraft")]).unwrap_err();
+        assert!(
+            e.starts_with("cannot open the automation write root")
+                && e.ends_with(&std::io::Error::from(std::io::ErrorKind::NotADirectory).to_string()),
+            "{e}"
+        );
+        assert!(AutomationRoots::new(&[PathBuf::new()], &[]).unwrap_err().starts_with("cannot open the automation read root ``"));
+        assert!(AutomationRoots::new(&[], &[]).unwrap().is_none());
         // One root alone grants only its own access.
-        let read_only = AutomationRoots::new(Some(&base.join("in")), None).unwrap();
-        let e = read_only.check(&s(base.join("in/x.pptx")), Access::Write).unwrap_err();
-        assert!(e.contains("no write root"), "{e}");
+        let read_only = AutomationRoots::new(&[base.join("in")], &[]).unwrap().unwrap();
+        let e = read_only.check(&s(base.join("in/x.deckcraft")), Access::Write).unwrap_err();
+        assert!(e.contains("write authority is absent"), "{e}");
         let _ = std::fs::remove_dir_all(base);
     }
 
+    /// A root and a path reached through links are compared after the links are followed.
     #[test]
     fn links_are_followed_before_comparing() {
         let (base, roots) = folders("links");
-        if !link(&base.join("outside/secret.pptx"), &base.join("in/leak.pptx")) {
+        #[cfg(unix)]
+        let made = |target: &Path, link: &Path| std::os::unix::fs::symlink(target, link).is_ok();
+        #[cfg(windows)]
+        let made = |target: &Path, link: &Path| {
+            let made =
+                if target.is_dir() { std::os::windows::fs::symlink_dir(target, link) } else { std::os::windows::fs::symlink_file(target, link) };
+            made.is_ok()
+        };
+        #[cfg(not(any(unix, windows)))]
+        let made = |_: &Path, _: &Path| false;
+        // Windows needs Developer Mode or elevation to make links: nothing to test without them.
+        if !made(&base.join("outside/secret.deckcraft"), &base.join("in/leak.deckcraft")) {
             eprintln!("skipped: symbolic links can't be made here");
             let _ = std::fs::remove_dir_all(base);
             return;
         }
-        assert!(roots.check(&s(base.join("in/leak.pptx")), Access::Read).unwrap_err().contains("outside the read root"), "a file link out");
-        assert!(link(&base.join("outside"), &base.join("out/away")));
+        assert!(roots.check(&s(base.join("in/leak.deckcraft")), Access::Read).unwrap_err().contains("outside the read root"), "a file link out");
+        assert!(made(&base.join("outside"), &base.join("out/away")));
         let e = roots.check(&s(base.join("out/away/new.png")), Access::Write).unwrap_err();
         assert!(e.contains("outside the write root"), "a folder link out: {e}");
-        assert!(link(&base.join("outside/gone.pptx"), &base.join("out/dangling.png")));
+        assert!(made(&base.join("outside/gone.deckcraft"), &base.join("out/dangling.png")));
         let e = roots.check(&s(base.join("out/dangling.png")), Access::Write).unwrap_err();
         assert!(e.contains("a link that leads nowhere"), "writing would create the file outside: {e}");
         // A link to a folder inside the root stays inside.
-        assert!(link(&base.join("in/sub"), &base.join("in/alias")));
-        assert_eq!(roots.check(&s(base.join("in/alias/x.pptx")), Access::Read), Ok(()));
+        assert!(made(&base.join("in/sub"), &base.join("in/alias")));
+        assert_eq!(roots.check(&s(base.join("in/alias/x.deckcraft")), Access::Read), Ok(()));
         // A root given through a link is the folder it leads to.
-        assert!(link(&base.join("in"), &base.join("in-link")));
-        let linked = AutomationRoots::new(Some(&base.join("in-link")), None).unwrap();
-        assert_eq!(linked.check(&s(base.join("in/a.pptx")), Access::Read), Ok(()));
+        assert!(made(&base.join("in"), &base.join("in-link")));
+        let linked = AutomationRoots::new(&[base.join("in-link")], &[]).unwrap().unwrap();
+        assert_eq!(linked.check(&s(base.join("in/a.deckcraft")), Access::Read), Ok(()));
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A name that differs in case is another name until the file system says otherwise.
+    #[test]
+    fn names_are_compared_exactly() {
+        let root = Path::new("/work/In");
+        assert!(inside(Path::new("/work/In/new/a.deckcraft"), root));
+        assert!(!inside(Path::new("/work/IN/a.deckcraft"), root));
+        assert!(!inside(Path::new("/WORK/In/a.deckcraft"), root));
+        assert!(!inside(Path::new("/work/in\u{212A}/a.deckcraft"), Path::new("/work/ink")), "the Kelvin sign folds to k");
+        if cfg!(windows) {
+            let root = Path::new(r"C:\work\In");
+            assert!(inside(Path::new(r"c:\work\In\a.deckcraft"), root), "a drive letter is one drive in either case");
+            assert!(!inside(Path::new(r"C:\work\IN\a.deckcraft"), root));
+        }
+    }
+
+    /// In a case-sensitive folder, `IN` beside the root `in` is another folder, there or not yet.
+    #[cfg(windows)]
+    #[test]
+    fn a_case_sensitive_folder_keeps_a_differently_cased_name_out() {
+        let base = std::env::temp_dir().join(format!("dc-file-access-case-sensitive-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let set = std::process::Command::new("fsutil").args(["file", "setCaseSensitiveInfo"]).arg(&base).arg("enable").output();
+        if !set.as_ref().is_ok_and(|o| o.status.success()) {
+            eprintln!("skipped: a case-sensitive folder can't be made here: {set:?}");
+            let _ = std::fs::remove_dir_all(base);
+            return;
+        }
+        std::fs::create_dir(base.join("in")).unwrap();
+        let root = [base.join("in")];
+        let roots = AutomationRoots::new(&root, &root).unwrap().unwrap();
+        assert_eq!(roots.check(&s(base.join("in/new.deckcraft")), Access::Write), Ok(()));
+        let e = roots.check(&s(base.join("IN/new.deckcraft")), Access::Write).unwrap_err();
+        assert!(e.contains("outside the write root"), "{e}");
+        std::fs::create_dir(base.join("IN")).unwrap();
+        std::fs::write(base.join("IN/secret.deckcraft"), "x").unwrap();
+        let e = roots.check(&s(base.join("IN/secret.deckcraft")), Access::Read).unwrap_err();
+        assert!(e.contains("outside the read root"), "{e}");
         let _ = std::fs::remove_dir_all(base);
     }
 
     #[cfg(windows)]
+    /// On Windows a path finds its real case on disk, and device names are refused.
     #[test]
-    fn windows_ignores_case_and_refuses_devices() {
+    fn windows_finds_the_real_case_and_refuses_devices() {
         let (base, roots) = folders("case");
-        assert_eq!(roots.check(&s(base.join("IN/A.PPTX")), Access::Read), Ok(()));
+        let upper = s(base.join("IN/a.deckcraft"));
+        assert_eq!(roots.check(&upper, Access::Read), Ok(()), "{upper}");
+        assert_eq!(roots.check(&s(base.join("In/Sub/New.deckcraft")), Access::Read), Ok(()));
+        assert_eq!(roots.check(&s(base.join("OUT/New.deckcraft")), Access::Write), Ok(()));
+        assert_eq!(roots.check(&s(base.join("OUT")), Access::Write), Ok(()));
         let e = roots.check(&s(base.join("out/NUL")), Access::Write).unwrap_err();
         assert!(e.contains("reserved device names"), "{e}");
         assert!(roots.check(&s(base.join("out/com1.txt")), Access::Write).is_err());
+        let e = roots.check(&s(base.join("out/COM¹.txt")), Access::Write).unwrap_err();
+        assert!(e.contains("reserved device names"), "{e}");
         assert_eq!(roots.check(&s(base.join("out/console.txt")), Access::Write), Ok(()));
         let _ = std::fs::remove_dir_all(base);
     }
 
+    /// Scopes nest, and a scope applies only on the thread that set it.
     #[test]
     fn scopes_nest_and_stay_on_their_thread() {
         let (base, roots) = folders("scopes");
-        let outside = s(base.join("outside/secret.pptx"));
+        let outside = s(base.join("outside/secret.deckcraft"));
         assert_eq!(check_read(&outside), Ok(()), "nothing is confined by default");
         confine(Some(&roots), || {
             assert!(check_read(&outside).is_err());
@@ -461,20 +485,23 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(base);
     }
 
+    /// What is a device name, with superscript digits and a name before a colon, and what isn't.
     #[test]
     fn device_names() {
-        for d in ["CON", "nul", "Com1", "LPT9.txt", "aux.pptx", "NUL "] {
+        for d in ["CON", "nul", "Com1", "LPT9.txt", "aux.deckcraft", "NUL ", "COM¹", "Lpt²", "lpt³.txt", "COM1:", "nul:x", "COM¹:"] {
             assert!(is_device_name(d), "{d}");
         }
-        for f in ["console", "com10", "COM0", "lpt", "a.pptx", "nul-x"] {
+        for f in ["console", "com10", "COM0", "lpt", "a.deckcraft", "nul-x", "COM⁴", "com¹0", "lpt¹x", "console:x"] {
             assert!(!is_device_name(f), "{f}");
         }
     }
 
-    /// Every file a command reads or writes by path goes through [`read_file`] / [`write_file`],
-    /// which check the roots. Engine code that reaches for `std::fs` itself would bypass them, so
-    /// none may: every file under `src/` except this module, `recovery.rs` (the desktop app's own
-    /// AutoRecover folder) and the test files.
+    /// Every file a command reads or writes by path goes through `io` (`read_file`,
+    /// `write_file`), which check the roots. Engine code that reaches for `std::fs` itself would
+    /// bypass them, so none may: every file under `src/` (commands, `lib.rs`, `guard.rs`...)
+    /// except `io.rs`, this module, `recovery.rs` (the recovery folder is set by the host
+    /// application, never by a command's path, and a headless session has none) and the test
+    /// files.
     #[test]
     fn commands_do_not_touch_the_file_system_themselves() {
         fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
@@ -490,17 +517,33 @@ pub(crate) mod tests {
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut files = vec![];
         walk(&src, &mut files);
-        assert!(files.iter().any(|f| f.ends_with("cmd/file.rs")) && files.iter().any(|f| f.ends_with("cmd/insert.rs")), "{files:?}");
+        assert!(files.iter().any(|f| f.ends_with("lib.rs")) && files.iter().any(|f| f.ends_with("cmd/file.rs")), "{files:?}");
         let mut offenders = vec![];
         for path in files {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let allowed = path == src.join("file_access.rs") || path == src.join("recovery.rs");
-            if allowed || name.starts_with("tests") {
+            // `io` and this module are the checked gateway; `tests*.rs` are test-only modules.
+            // `recovery` and `spell` touch only the app's own folders (AutoRecover files, the
+            // system and user spelling dictionaries), never a path a command names.
+            if path.parent() == Some(src.as_path()) && matches!(name, "io.rs" | "file_access.rs" | "recovery.rs" | "spell.rs")
+                || name.starts_with("tests")
+            {
                 continue;
             }
             let text = std::fs::read_to_string(&path).unwrap();
-            // Test modules (which build their own fixtures) come last in each file.
-            let code = text.split("#[cfg(test)]").next().unwrap_or("");
+            // Test modules (which build their own fixtures) come last in each file; a
+            // `#[cfg(test)]` import near the top doesn't start them.
+            let mut code = text.as_str();
+            let mut from = 0;
+            while let Some(i) = text[from..].find("#[cfg(test)]") {
+                let at = from + i;
+                let next = text[at + "#[cfg(test)]".len()..].trim_start();
+                if ["use ", "pub use ", "pub(crate) use ", "pub(super) use "].iter().any(|p| next.starts_with(p)) {
+                    from = at + 1;
+                    continue;
+                }
+                code = &text[..at];
+                break;
+            }
             for (n, line) in code.lines().enumerate() {
                 let line = line.trim_start();
                 let touches = ["std::fs", "File::open", "File::create", "OpenOptions"].iter().any(|w| line.contains(w));
@@ -509,6 +552,6 @@ pub(crate) mod tests {
                 }
             }
         }
-        assert!(offenders.is_empty(), "use crate::file_access::{{read_file, write_file}}: {offenders:#?}");
+        assert!(offenders.is_empty(), "use crate::io::{{read_file, write_file}}: {offenders:#?}");
     }
 }
